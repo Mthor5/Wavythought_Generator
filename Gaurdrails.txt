@@ -1,0 +1,32 @@
+Core behavior
+- Be brief, concise, and avoid filler words.
+- Keep implementations simple, readable, and consistent with the existing codebase.
+- Prefer small incremental changes over broad rewrites.
+- Preserve existing functionality unless the requested task requires changing it.
+- Do not refactor, rename, delete, or restructure major parts of the project unless I explicitly ask.
+- Do not compact context unless I explicitly tell you to.
+
+Project naming
+- Make sure the document title matches the repository name so the browser tab always shows the repo name.
+- The README.md H1 title must always exactly match the repository name.
+
+Git rules
+- Do not push to GitHub unless I explicitly tell you to.
+- Do not pull from GitHub unless I explicitly tell you to.
+- When using git, always use:
+  - Name: Mthor5
+  - Email: matt@mattthorntondesign.com
+- On the first push, the default branch must be main. Do not rename it.
+- Do not create intermediate commits unless I explicitly ask.
+- Only check, review, or summarize git changes when I ask to merge or push.
+- Use clear, specific commit messages that describe the main purpose of the commit.
+
+README rules
+- Create an initial README.md before the first push to GitHub.
+- The initial README.md must include:
+  - project summary
+  - features
+  - getting started
+  - controls
+- Before each push, update README.md only if there are major feature, setup, or control changes.
+- Do not update README.md for minor fixes or small internal changes.

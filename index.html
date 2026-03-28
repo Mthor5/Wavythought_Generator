@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Wavythought Generator</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./node_modules/three/build/three.module.js",
+          "three/addons/": "./node_modules/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <header class="hero">
+          <p class="eyebrow">V1 Surface Study</p>
+          <h1>Wavythought Generator</h1>
+          <p class="hero-copy">
+            Import a closed 2D profile, place wave emitters, and preview a
+            static sculpted surface in matte grey or wood.
+          </p>
+        </header>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Profile Input</h2>
+            <button id="loadSampleButton" class="ghost-button">Load Sample</button>
+          </div>
+
+          <label class="control">
+            <span>Import SVG, DXF, or image</span>
+            <input id="profileFileInput" type="file" accept=".svg,.dxf,.png,.jpg,.jpeg,.webp,.bmp" />
+          </label>
+
+          <div class="button-row">
+            <button id="importProfileButton" class="ghost-button" type="button">Import Selected File</button>
+          </div>
+
+          <div id="imageImportOptions" class="control-grid">
+            <label class="control">
+              <span>Image threshold</span>
+              <div class="value-control">
+                <input id="imageThresholdInput" type="range" min="16" max="240" value="140" />
+                <input id="imageThresholdNumber" type="number" min="16" max="240" step="1" value="140" />
+              </div>
+            </label>
+
+            <label class="control checkbox-control">
+              <input id="invertImageInput" type="checkbox" />
+              <span>Invert image trace</span>
+            </label>
+
+            <label class="control">
+              <span>Target regions</span>
+              <input id="imageTargetRegionsInput" type="number" min="0" step="1" value="0" />
+            </label>
+
+            <div class="button-row">
+              <button id="retraceImageButton" class="ghost-button" type="button">Retrace Image</button>
+            </div>
+
+            <p id="imageTraceStatus" class="status-text">
+              Adjust image trace settings, then retrace.
+            </p>
+          </div>
+
+          <div id="vectorImportOptions" class="control-grid">
+            <label class="control">
+              <span>Curve sampling</span>
+              <div class="value-control">
+                <input id="svgSamplesInput" type="range" min="24" max="240" value="96" />
+                <input id="svgSamplesNumber" type="number" min="24" max="240" step="1" value="96" />
+              </div>
+            </label>
+          </div>
+
+          <div class="control-grid">
+            <div class="control">
+              <span>Import units</span>
+              <div class="segmented-control">
+                <button id="unitsMmButton" class="ghost-button" type="button">mm</button>
+                <button id="unitsInButton" class="ghost-button" type="button">in</button>
+              </div>
+            </div>
+
+            <div class="dimension-grid">
+              <label class="control">
+                <span>X size</span>
+                <input id="importWidthInput" type="number" min="0.001" step="0.001" value="150" />
+              </label>
+
+              <label class="control">
+                <span>Y size</span>
+                <input id="importHeightInput" type="number" min="0.001" step="0.001" value="150" />
+              </label>
+            </div>
+
+            <label class="control checkbox-control">
+              <input id="aspectLockInput" type="checkbox" checked />
+              <span>Lock X/Y size</span>
+            </label>
+          </div>
+
+          <div id="imageTracePanel" class="control-grid is-hidden">
+            <div class="panel-heading compact-heading">
+              <h3>Trace Regions</h3>
+            </div>
+            <p class="status-text">
+              The largest traced region drives the surface. Set each other region to add, subtract, or ignore.
+            </p>
+            <div id="imageTraceList" class="stack-list"></div>
+          </div>
+
+          <p id="profileStatus" class="status-text">
+            Using the default sample profile until you import a file.
+          </p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Surface</h2>
+          </div>
+
+          <div class="control-grid">
+            <label class="control">
+              <span>Grid resolution</span>
+              <div class="value-control">
+                <input id="resolutionInput" type="range" min="48" max="180" value="120" />
+                <input id="resolutionNumber" type="number" min="48" max="180" step="1" value="120" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Height scale</span>
+              <div class="value-control">
+                <input id="heightScaleInput" type="range" min="0" max="20" step="0.1" value="7.5" />
+                <input id="heightScaleNumber" type="number" min="0" max="20" step="0.1" value="7.5" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Edge fade distance</span>
+              <div class="value-control">
+                <input id="edgeFadeInput" type="range" min="0" max="40" step="0.5" value="12" />
+                <input id="edgeFadeNumber" type="number" min="0" max="40" step="0.5" value="12" />
+              </div>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Wave Sources</h2>
+            <div class="button-row">
+              <button id="addPointSourceButton" class="ghost-button">Add Point</button>
+              <button id="addCurveSourceButton" class="ghost-button">Add Curve</button>
+            </div>
+          </div>
+
+          <p id="sourceModeStatus" class="status-text">
+            Click Add Point or Add Curve, then place the source in the 2D view.
+          </p>
+
+          <div id="sourceList" class="stack-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Regions</h2>
+          </div>
+          <p class="status-text">
+            The largest imported loop drives the surface. Interior loops act as
+            color-break regions for this first visualization pass.
+          </p>
+          <div id="regionList" class="stack-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Material</h2>
+          </div>
+
+          <div class="control-grid">
+            <label class="control checkbox-control">
+              <input id="woodToggleInput" type="checkbox" />
+              <span>Wood grain preview</span>
+            </label>
+
+            <label class="control">
+              <span>Base species</span>
+              <select id="speciesSelect"></select>
+            </label>
+
+            <label class="control">
+              <span>Grain scale</span>
+              <div class="value-control">
+                <input id="grainScaleInput" type="range" min="0.5" max="4" step="0.1" value="1.5" />
+                <input id="grainScaleNumber" type="number" min="0.5" max="4" step="0.1" value="1.5" />
+              </div>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Export</h2>
+          </div>
+
+          <div class="button-row export-row">
+            <button id="exportStlButton">Export STL</button>
+            <button id="exportObjButton">Export OBJ</button>
+            <button id="exportJsonButton">Export Surface JSON</button>
+          </div>
+
+          <p class="status-text">
+            STL and OBJ export the V1 surface mesh. IGES is deferred until the
+            wave field is fit to a CAD-ready surface representation.
+          </p>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <section class="viewport-card surface-card">
+          <div class="card-header">
+            <div>
+              <p class="eyebrow">3D Preview</p>
+              <h2>Surface Visualization</h2>
+            </div>
+            <div id="bboxReadout" class="bbox-readout">BBox --</div>
+          </div>
+          <div class="surface-toolbar">
+            <button id="perspectiveViewButton" class="ghost-button" type="button">Perspective</button>
+            <button id="topViewButton" class="ghost-button" type="button">Top View</button>
+            <button id="resetViewButton" class="ghost-button" type="button">Reset View</button>
+            <button id="toggleHelpersButton" class="ghost-button" type="button">Hide Guides</button>
+          </div>
+          <canvas id="surfaceCanvas"></canvas>
+        </section>
+
+        <section class="viewport-card profile-card">
+          <div class="card-header profile-card-header">
+            <div>
+              <p class="eyebrow">2D Layout</p>
+              <h2>Profile and Wave Placement</h2>
+            </div>
+            <div class="button-row">
+              <button id="dockProfileButton" class="ghost-button" type="button">Dock</button>
+            </div>
+          </div>
+          <canvas id="profileCanvas" width="920" height="520"></canvas>
+        </section>
+      </main>
+    </div>
+
+    <svg id="svgMeasureRoot" class="hidden-measure"></svg>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

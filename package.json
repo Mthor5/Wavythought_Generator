@@ -1,0 +1,14 @@
+{
+  "name": "wavythought-generator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-server.js",
+    "build": "node -e \"console.log('No build step for V1')\"",
+    "preview": "node scripts/dev-server.js"
+  },
+  "devDependencies": {
+    "three": "^0.176.0"
+  }
+}
