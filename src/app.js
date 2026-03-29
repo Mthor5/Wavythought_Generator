@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { createDefaultState, createSource, assignLoopMetadata } from "./state.js";
 import {
   buildExportQuads,
@@ -122,6 +123,18 @@ const elements = {
   grainAxisXButton: document.getElementById("grainAxisXButton"),
   grainAxisYButton: document.getElementById("grainAxisYButton"),
   grainAxisZButton: document.getElementById("grainAxisZButton"),
+  renderPresetStudioButton: document.getElementById("renderPresetStudioButton"),
+  renderPresetWarmButton: document.getElementById("renderPresetWarmButton"),
+  renderPresetCoolButton: document.getElementById("renderPresetCoolButton"),
+  renderPresetDramaticButton: document.getElementById("renderPresetDramaticButton"),
+  renderDetailSelect: document.getElementById("renderDetailSelect"),
+  renderWidthInput: document.getElementById("renderWidthInput"),
+  renderHeightInput: document.getElementById("renderHeightInput"),
+  renderLockAspectInput: document.getElementById("renderLockAspectInput"),
+  renderPreviewInput: document.getElementById("renderPreviewInput"),
+  renderBackgroundSelect: document.getElementById("renderBackgroundSelect"),
+  renderStillButton: document.getElementById("renderStillButton"),
+  renderStatus: document.getElementById("renderStatus"),
   themeLightButton: document.getElementById("themeLightButton"),
   themeDarkButton: document.getElementById("themeDarkButton"),
   addPointSourceButton: document.getElementById("addPointSourceButton"),
@@ -173,6 +186,13 @@ let traceHighlightGroup;
 let resizeObserver;
 let gridGroup;
 let helperSprites = [];
+let liveAmbientLight;
+let liveKeyLight;
+let liveFillLight;
+let liveRimLight;
+let livePmremGenerator;
+let liveEnvironmentScene;
+let liveEnvironmentTarget;
 const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -557,6 +577,67 @@ function getPreferredTheme() {
   return systemThemeMedia.matches ? "dark" : "light";
 }
 
+function getViewportBackgroundColor() {
+  const preset = getRenderPresetConfig();
+  const backgroundColor =
+    state.render.previewInViewport && state.render.background !== "transparent"
+      ? getRenderBackgroundColor(preset)
+      : state.ui.theme === "dark"
+        ? "#1b1a20"
+        : "#fdfcfc";
+  return backgroundColor;
+}
+
+function applyViewportRenderLook() {
+  if (!scene || !renderer || !liveAmbientLight || !liveKeyLight || !liveFillLight || !liveRimLight) {
+    return;
+  }
+
+  const previewEnabled = state.render.previewInViewport;
+  const preset = getRenderPresetConfig();
+
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = previewEnabled ? preset.exposure : 1;
+
+  const backgroundColor = getViewportBackgroundColor();
+  scene.background = backgroundColor ? new THREE.Color(backgroundColor) : null;
+
+  if (previewEnabled) {
+    liveAmbientLight.color.set(preset.ambientColor);
+    liveAmbientLight.intensity = preset.ambientIntensity;
+    liveKeyLight.color.set(preset.keyColor);
+    liveKeyLight.intensity = preset.keyIntensity;
+    liveKeyLight.position.set(...preset.keyPosition);
+    configureDirectionalShadow(liveKeyLight, preset.shadowStrength, 2048);
+    liveFillLight.color.set(preset.fillColor);
+    liveFillLight.intensity = preset.fillIntensity;
+    liveFillLight.position.set(...preset.fillPosition);
+    liveFillLight.castShadow = false;
+    liveRimLight.color.set(preset.rimColor);
+    liveRimLight.intensity = preset.rimIntensity;
+    liveRimLight.position.set(...preset.rimPosition);
+    liveRimLight.castShadow = false;
+    scene.environment = liveEnvironmentTarget?.texture || null;
+  } else {
+    liveAmbientLight.color.set("#fff7ee");
+    liveAmbientLight.intensity = 1.4;
+    liveKeyLight.color.set("#fff4e7");
+    liveKeyLight.intensity = 2.1;
+    liveKeyLight.position.set(2.1, -1.8, 2.6);
+    configureDirectionalShadow(liveKeyLight, 0.9, 2048);
+    liveFillLight.color.set("#f7dcc8");
+    liveFillLight.intensity = 0.12;
+    liveFillLight.position.set(-1.5, 1.6, 1.1);
+    liveFillLight.castShadow = false;
+    liveRimLight.color.set("#c9d8ff");
+    liveRimLight.intensity = 0.36;
+    liveRimLight.position.set(-1.4, 1.3, 1.2);
+    liveRimLight.castShadow = false;
+    scene.environment = null;
+  }
+}
+
 function syncTheme() {
   if (state.ui.followSystemTheme) {
     state.ui.theme = getPreferredTheme();
@@ -565,9 +646,7 @@ function syncTheme() {
   elements.body.classList.toggle("lights-off", dark);
   elements.themeLightButton.classList.toggle("is-active", !dark);
   elements.themeDarkButton.classList.toggle("is-active", dark);
-  if (scene) {
-    scene.background = new THREE.Color(dark ? "#1b1a20" : "#fdfcfc");
-  }
+  applyViewportRenderLook();
 }
 
 function setImagePreviewModalOpen(isOpen) {
@@ -735,6 +814,11 @@ function syncCanvasSizes() {
     renderer.setSize(width, height, false);
     camera.aspect = width / Math.max(height, 1);
     camera.updateProjectionMatrix();
+  }
+  if (state.render.lockAspect) {
+    syncRenderAspectFromWidth();
+    elements.renderWidthInput.value = String(state.render.outputWidth);
+    elements.renderHeightInput.value = String(state.render.outputHeight);
   }
   if (profileChanged) {
     renderProfileCanvas();
@@ -1706,6 +1790,11 @@ function initThree() {
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(elements.surfaceCanvas.clientWidth, elements.surfaceCanvas.clientHeight, false);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color("#efe8dd");
@@ -1723,15 +1812,25 @@ function initThree() {
   controls.enableDamping = true;
   controls.target.set(0, 0, 0.04);
 
-  scene.add(new THREE.AmbientLight("#fff7ee", 1.4));
+  liveAmbientLight = new THREE.AmbientLight("#fff7ee", 1.4);
+  scene.add(liveAmbientLight);
 
-  const keyLight = new THREE.DirectionalLight("#fff4e7", 1.6);
-  keyLight.position.set(2.1, -1.8, 2.6);
-  scene.add(keyLight);
+  liveKeyLight = new THREE.DirectionalLight("#fff4e7", 1.6);
+  liveKeyLight.position.set(2.1, -1.8, 2.6);
+  configureDirectionalShadow(liveKeyLight, 0.9, 2048);
+  scene.add(liveKeyLight);
 
-  const rimLight = new THREE.DirectionalLight("#c9d8ff", 0.45);
-  rimLight.position.set(-1.4, 1.3, 1.2);
-  scene.add(rimLight);
+  liveFillLight = new THREE.DirectionalLight("#f7dcc8", 0.18);
+  liveFillLight.position.set(-1.5, 1.6, 1.1);
+  scene.add(liveFillLight);
+
+  liveRimLight = new THREE.DirectionalLight("#c9d8ff", 0.45);
+  liveRimLight.position.set(-1.4, 1.3, 1.2);
+  scene.add(liveRimLight);
+
+  livePmremGenerator = new THREE.PMREMGenerator(renderer);
+  liveEnvironmentScene = new RoomEnvironment();
+  liveEnvironmentTarget = livePmremGenerator.fromScene(liveEnvironmentScene, 0.03);
 
   gridGroup = new THREE.Group();
   scene.add(gridGroup);
@@ -1769,6 +1868,7 @@ function initThree() {
   };
 
   requestAnimationFrame(animate);
+  applyViewportRenderLook();
 }
 
 function updateThreeSurface() {
@@ -1814,6 +1914,8 @@ function updateThreeSurface() {
 
   surfaceMesh = new THREE.Mesh(geometry, material);
   surfaceMesh.position.z = -currentSurfaceGrid.minHeight;
+  surfaceMesh.castShadow = true;
+  surfaceMesh.receiveShadow = true;
   scene.add(surfaceMesh);
 
   if (state.surface.showResolutionEdges) {
@@ -1833,6 +1935,267 @@ function updateThreeSurface() {
   update3DHelperObjects();
   updateTraceHighlightObjects();
   updateSceneGrid();
+}
+
+function getRenderPresetConfig() {
+  switch (state.render.preset) {
+    case "warm":
+      return {
+        exposure: 1.08,
+        ambientColor: "#fff0de",
+        ambientIntensity: 1.08,
+        keyColor: "#ffd09a",
+        keyIntensity: 2.95,
+        keyPosition: [2.4, -1.8, 3.1],
+        fillColor: "#a8c8ff",
+        fillIntensity: 0.5,
+        fillPosition: [-2.0, 1.9, 1.8],
+        rimColor: "#ffddb4",
+        rimIntensity: 0.5,
+        rimPosition: [-1.4, -2.2, 2.2],
+        backgroundLight: "#f4eadf",
+        backgroundDark: "#18141a",
+        shadowStrength: 1.05,
+      };
+    case "cool":
+      return {
+        exposure: 0.98,
+        ambientColor: "#ecf1ff",
+        ambientIntensity: 1.02,
+        keyColor: "#c8ddff",
+        keyIntensity: 2.85,
+        keyPosition: [2.2, -1.7, 3.0],
+        fillColor: "#ffd3a8",
+        fillIntensity: 0.46,
+        fillPosition: [-1.9, 2.0, 1.7],
+        rimColor: "#dbe5ff",
+        rimIntensity: 0.58,
+        rimPosition: [-1.4, -2.2, 2.3],
+        backgroundLight: "#e8eef7",
+        backgroundDark: "#101722",
+        shadowStrength: 1.08,
+      };
+    case "dramatic":
+      return {
+        exposure: 0.92,
+        ambientColor: "#f6f0ff",
+        ambientIntensity: 0.74,
+        keyColor: "#ffd3a6",
+        keyIntensity: 3.35,
+        keyPosition: [3.1, -1.25, 3.5],
+        fillColor: "#90b0ff",
+        fillIntensity: 0.56,
+        fillPosition: [-2.4, 2.4, 1.7],
+        rimColor: "#f0cfff",
+        rimIntensity: 0.78,
+        rimPosition: [-1.3, -2.6, 2.8],
+        backgroundLight: "#ece6e0",
+        backgroundDark: "#100d14",
+        shadowStrength: 1.32,
+      };
+    default:
+      return {
+        exposure: 1.02,
+        ambientColor: "#fff7ee",
+        ambientIntensity: 1.18,
+        keyColor: "#fff1e0",
+        keyIntensity: 2.4,
+        keyPosition: [2.2, -1.8, 2.9],
+        fillColor: "#d7e3ff",
+        fillIntensity: 0.42,
+        fillPosition: [-1.8, 1.8, 1.7],
+        rimColor: "#ffe0ed",
+        rimIntensity: 0.38,
+        rimPosition: [-1.1, -2.2, 2.3],
+        backgroundLight: "#f1ebe4",
+        backgroundDark: "#16131a",
+        shadowStrength: 0.95,
+      };
+  }
+}
+
+function getRenderBackgroundColor(preset) {
+  switch (state.render.background) {
+    case "light":
+      return "#f5efe8";
+    case "dark":
+      return "#131018";
+    case "transparent":
+      return null;
+    default:
+      return state.ui.theme === "dark" ? preset.backgroundDark : preset.backgroundLight;
+  }
+}
+
+function configureDirectionalShadow(light, strength = 1, mapSize = 2048) {
+  light.castShadow = true;
+  light.shadow.mapSize.set(mapSize, mapSize);
+  light.shadow.bias = -0.00018 * strength;
+  light.shadow.normalBias = 0.02 * strength;
+  light.shadow.radius = 2 + strength * 1.5;
+  light.shadow.camera.near = 0.1;
+  light.shadow.camera.far = 12;
+  light.shadow.camera.left = -2.4;
+  light.shadow.camera.right = 2.4;
+  light.shadow.camera.top = 2.4;
+  light.shadow.camera.bottom = -2.4;
+}
+
+function buildStillRenderState() {
+  const detailMultiplier = Math.max(1, Number(state.render.detailMultiplier) || 1);
+  const renderState = {
+    ...state,
+    surface: {
+      ...state.surface,
+      resolution: Math.min(320, Math.max(32, Math.round(state.surface.resolution * detailMultiplier))),
+    },
+    meta: {
+      ...state.meta,
+      waveNormalizationFactor: 1,
+    },
+  };
+
+  const renderGrid = buildSurfaceGrid(renderState);
+  renderState.meta.waveNormalizationFactor = renderGrid.normalizationFactor || 1;
+  return { renderState, renderGrid };
+}
+
+function disposeRenderScene(renderScene, disposableResources) {
+  renderScene.traverse((object) => {
+    if (object.geometry) {
+      object.geometry.dispose();
+    }
+    if (object.material) {
+      if (Array.isArray(object.material)) {
+        object.material.forEach((material) => material?.dispose?.());
+      } else {
+        object.material.dispose?.();
+      }
+    }
+  });
+
+  disposableResources.forEach((resource) => resource?.dispose?.());
+}
+
+function downloadDataUrl(filename, dataUrl) {
+  const link = document.createElement("a");
+  link.href = dataUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+async function renderStillImage() {
+  if (!camera || !currentSurfaceGrid) {
+    state.ui.renderStatus = "Nothing to render yet.";
+    syncRenderStatus();
+    return;
+  }
+
+  const width = Math.max(512, Math.round(Number(state.render.outputWidth) || 2400));
+  const height = Math.max(512, Math.round(Number(state.render.outputHeight) || 1350));
+  state.ui.renderStatus = `Rendering ${width} x ${height} PNG...`;
+  syncRenderStatus();
+
+  await new Promise((resolve) => window.requestAnimationFrame(resolve));
+  let renderRenderer;
+  let renderScene;
+  let environmentScene;
+  let disposableResources = [];
+
+  try {
+    const renderCanvas = document.createElement("canvas");
+    renderRenderer = new THREE.WebGLRenderer({
+      canvas: renderCanvas,
+      antialias: true,
+      alpha: state.render.background === "transparent",
+      preserveDrawingBuffer: true,
+    });
+    renderRenderer.setPixelRatio(1);
+    renderRenderer.setSize(width, height, false);
+    renderRenderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderRenderer.shadowMap.enabled = true;
+    renderRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    const preset = getRenderPresetConfig();
+    renderRenderer.toneMappingExposure = preset.exposure;
+
+    renderScene = new THREE.Scene();
+    const backgroundColor = getRenderBackgroundColor(preset);
+    renderScene.background = backgroundColor ? new THREE.Color(backgroundColor) : null;
+
+    const pmremGenerator = new THREE.PMREMGenerator(renderRenderer);
+    environmentScene = new RoomEnvironment();
+    const environmentTarget = pmremGenerator.fromScene(environmentScene, 0.03);
+    renderScene.environment = environmentTarget.texture;
+    disposableResources = [environmentTarget, pmremGenerator];
+
+    renderScene.add(new THREE.AmbientLight(preset.ambientColor, preset.ambientIntensity));
+
+    const keyLight = new THREE.DirectionalLight(preset.keyColor, preset.keyIntensity);
+    keyLight.position.set(...preset.keyPosition);
+    configureDirectionalShadow(keyLight, preset.shadowStrength, 4096);
+    renderScene.add(keyLight);
+
+    const fillLight = new THREE.DirectionalLight(preset.fillColor, preset.fillIntensity);
+    fillLight.position.set(...preset.fillPosition);
+    fillLight.castShadow = false;
+    renderScene.add(fillLight);
+
+    const rimLight = new THREE.DirectionalLight(preset.rimColor, preset.rimIntensity);
+    rimLight.position.set(...preset.rimPosition);
+    rimLight.castShadow = false;
+    renderScene.add(rimLight);
+
+    const { renderState, renderGrid } = buildStillRenderState();
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(renderGrid.positions, 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(renderGrid.uvs, 2));
+    geometry.setIndex(renderGrid.indices);
+    geometry.computeVertexNormals();
+
+    const { colorCanvas, alphaCanvas } = createMaterialMaps(renderState);
+    const renderColorMap = new THREE.CanvasTexture(colorCanvas);
+    renderColorMap.colorSpace = THREE.SRGBColorSpace;
+    renderColorMap.anisotropy = 8;
+    renderColorMap.needsUpdate = true;
+
+    const renderAlphaMap = new THREE.CanvasTexture(alphaCanvas);
+    renderAlphaMap.needsUpdate = true;
+    disposableResources.push(renderColorMap, renderAlphaMap);
+
+    const mesh = new THREE.Mesh(geometry, buildSurfaceMaterial(renderColorMap, renderAlphaMap));
+    mesh.position.z = -renderGrid.minHeight;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    renderScene.add(mesh);
+
+    const renderCamera = camera.clone();
+    renderCamera.aspect = width / Math.max(height, 1);
+    renderCamera.updateProjectionMatrix();
+
+    renderRenderer.render(renderScene, renderCamera);
+
+    const presetLabel = state.render.preset[0].toUpperCase() + state.render.preset.slice(1);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const dataUrl = renderRenderer.domElement.toDataURL("image/png");
+    downloadDataUrl(`wavythought-render-${state.render.preset}-${timestamp}.png`, dataUrl);
+
+    state.ui.renderStatus = `Rendered ${width} x ${height} PNG with the ${presetLabel} preset.`;
+  } catch (error) {
+    state.ui.renderStatus = error instanceof Error ? `Render failed: ${error.message}` : "Render failed.";
+  } finally {
+    environmentScene?.dispose?.();
+    if (renderScene) {
+      disposeRenderScene(renderScene, disposableResources);
+    } else {
+      disposableResources.forEach((resource) => resource?.dispose?.());
+    }
+    renderRenderer?.dispose?.();
+    syncRenderStatus();
+  }
 }
 
 function drawLoop(context, loop, bounds, width, height) {
@@ -2522,6 +2885,30 @@ function syncStatus() {
         : "Click Add Point or Add Curve, then place the source in the 2D view.";
 }
 
+function getSurfaceAspectRatio() {
+  const width = elements.surfaceCanvas.clientWidth || elements.surfaceCanvas.width || 16;
+  const height = elements.surfaceCanvas.clientHeight || elements.surfaceCanvas.height || 9;
+  return width / Math.max(height, 1);
+}
+
+function syncRenderAspectFromWidth() {
+  const width = Math.max(512, Math.round(Number(state.render.outputWidth) || 512));
+  const aspect = getSurfaceAspectRatio();
+  state.render.outputWidth = width;
+  state.render.outputHeight = Math.max(512, Math.round(width / Math.max(aspect, 1e-4)));
+}
+
+function syncRenderAspectFromHeight() {
+  const height = Math.max(512, Math.round(Number(state.render.outputHeight) || 512));
+  const aspect = getSurfaceAspectRatio();
+  state.render.outputHeight = height;
+  state.render.outputWidth = Math.max(512, Math.round(height * aspect));
+}
+
+function syncRenderStatus() {
+  elements.renderStatus.textContent = state.ui.renderStatus;
+}
+
 function syncView() {
   elements.svgSamplesInput.value = String(state.importSettings.curveSamples);
   elements.svgSamplesNumber.value = String(state.importSettings.curveSamples);
@@ -2558,6 +2945,16 @@ function syncView() {
   elements.grainAxisXButton.classList.toggle("is-active", state.surface.grainAxis === "x");
   elements.grainAxisYButton.classList.toggle("is-active", state.surface.grainAxis === "y");
   elements.grainAxisZButton.classList.toggle("is-active", state.surface.grainAxis === "z");
+  elements.renderPresetStudioButton.classList.toggle("is-active", state.render.preset === "studio");
+  elements.renderPresetWarmButton.classList.toggle("is-active", state.render.preset === "warm");
+  elements.renderPresetCoolButton.classList.toggle("is-active", state.render.preset === "cool");
+  elements.renderPresetDramaticButton.classList.toggle("is-active", state.render.preset === "dramatic");
+  elements.renderDetailSelect.value = String(state.render.detailMultiplier);
+  elements.renderWidthInput.value = String(state.render.outputWidth);
+  elements.renderHeightInput.value = String(state.render.outputHeight);
+  elements.renderLockAspectInput.checked = state.render.lockAspect;
+  elements.renderPreviewInput.checked = state.render.previewInViewport;
+  elements.renderBackgroundSelect.value = state.render.background;
 
   updateImportOptionsVisibility();
   elements.bboxReadout.textContent = formatBoundsReadout();
@@ -2571,6 +2968,7 @@ function syncView() {
   renderSourceList();
   renderRegionList();
   syncStatus();
+  syncRenderStatus();
   syncCanvasSizes();
   renderProfileCanvas();
   updateThreeSurface();
@@ -2578,6 +2976,38 @@ function syncView() {
 
 function updateSurfaceSetting(key, value) {
   state.surface[key] = value;
+  syncView();
+}
+
+function updateRenderSetting(key, value) {
+  state.render[key] = value;
+  syncView();
+}
+
+function setRenderPreset(preset) {
+  state.render.preset = preset;
+  syncView();
+}
+
+function updateRenderDimension(axis, rawValue) {
+  const numericValue = Math.max(512, Math.round(Number(rawValue) || 0));
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    syncView();
+    return;
+  }
+
+  if (axis === "width") {
+    state.render.outputWidth = numericValue;
+    if (state.render.lockAspect) {
+      syncRenderAspectFromWidth();
+    }
+  } else {
+    state.render.outputHeight = numericValue;
+    if (state.render.lockAspect) {
+      syncRenderAspectFromHeight();
+    }
+  }
+
   syncView();
 }
 
@@ -2679,6 +3109,7 @@ function resetToSample() {
   state.loops = fresh.loops;
   state.sources = fresh.sources;
   state.surface = fresh.surface;
+  state.render = fresh.render;
   state.ui = fresh.ui;
   state.meta.importName = fresh.meta.importName;
   state.meta.importedFile = null;
@@ -3126,6 +3557,57 @@ function wireEvents() {
   });
   elements.grainAxisZButton.addEventListener("click", () => {
     updateSurfaceSetting("grainAxis", "z");
+  });
+  elements.renderPresetStudioButton.addEventListener("click", () => {
+    setRenderPreset("studio");
+  });
+  elements.renderPresetWarmButton.addEventListener("click", () => {
+    setRenderPreset("warm");
+  });
+  elements.renderPresetCoolButton.addEventListener("click", () => {
+    setRenderPreset("cool");
+  });
+  elements.renderPresetDramaticButton.addEventListener("click", () => {
+    setRenderPreset("dramatic");
+  });
+  elements.renderDetailSelect.addEventListener("change", (event) => {
+    updateRenderSetting("detailMultiplier", Number(event.target.value));
+  });
+  elements.renderBackgroundSelect.addEventListener("change", (event) => {
+    updateRenderSetting("background", event.target.value);
+  });
+  elements.renderLockAspectInput.addEventListener("change", (event) => {
+    state.render.lockAspect = event.target.checked;
+    if (state.render.lockAspect) {
+      syncRenderAspectFromWidth();
+    }
+    syncView();
+  });
+  elements.renderPreviewInput.addEventListener("change", (event) => {
+    updateRenderSetting("previewInViewport", event.target.checked);
+  });
+  elements.renderWidthInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    updateRenderDimension("width", event.target.value);
+  });
+  elements.renderWidthInput.addEventListener("blur", () => {
+    elements.renderWidthInput.value = String(state.render.outputWidth);
+  });
+  elements.renderHeightInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    updateRenderDimension("height", event.target.value);
+  });
+  elements.renderHeightInput.addEventListener("blur", () => {
+    elements.renderHeightInput.value = String(state.render.outputHeight);
+  });
+  elements.renderStillButton.addEventListener("click", () => {
+    renderStillImage();
   });
 
   elements.addPointSourceButton.addEventListener("click", () => {
