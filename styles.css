@@ -14,6 +14,7 @@
   --panel-shadow: 0 28px 70px rgba(31, 27, 31, 0.16);
   --panel-shadow-strong: 0 35px 90px rgba(31, 27, 31, 0.22);
   --radius: 28px;
+  --control-radius: 16px;
 }
 
 * {
@@ -139,7 +140,7 @@ select {
 
 button {
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--control-radius);
   background: var(--accent);
   color: #fdfcfc;
   padding: 0.72rem 1.05rem;
@@ -201,7 +202,7 @@ select,
 input[type="number"] {
   width: 100%;
   padding: 0.6rem 0.7rem;
-  border-radius: 16px;
+  border-radius: var(--control-radius);
   border: 1px solid rgba(31, 27, 31, 0.15);
   background: rgba(255, 255, 255, 0.76);
   color: var(--text);
@@ -594,6 +595,16 @@ body.lights-off .profile-card {
   width: 100%;
 }
 
+.start-project-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.start-project-actions .ghost-button {
+  width: 100%;
+}
+
 .import-action-row {
   justify-content: flex-end;
   margin-top: 0.75rem;
@@ -730,6 +741,10 @@ body.lights-off .segmented-control .ghost-button.is-active {
 
 .project-summary-grid .status-text {
   margin: 0;
+}
+
+.project-summary-grid .status-text:first-child {
+  margin-top: 0.15rem;
 }
 
 .region-species-scroll-wrap {

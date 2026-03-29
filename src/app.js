@@ -1313,6 +1313,7 @@ function initCollapsiblePanels() {
       return;
     }
     const shouldStartCollapsed =
+      title === "Project Info" ||
       title === "Surface Mesh Resolution" ||
       title === "Wood Grain Preview" ||
       title === "Render View" ||

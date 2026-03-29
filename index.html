@@ -39,11 +39,8 @@
 
         <section class="panel">
           <div class="panel-heading">
-            <h2>Project</h2>
-            <div class="button-row">
-              <button id="saveProjectButton" class="ghost-button" type="button">Save Project</button>
-              <button id="openProjectButton" class="ghost-button" type="button">Open Project</button>
-            </div>
+            <h2>Project Info</h2>
+            <div></div>
           </div>
           <input id="openProjectInput" type="file" accept=".json,application/json" class="is-hidden" />
           <div class="control-grid project-summary-grid">
@@ -57,8 +54,17 @@
 
         <section class="panel">
           <div class="panel-heading">
-            <h2>Profile Input</h2>
-            <button id="loadSampleButton" class="ghost-button">Load Sample</button>
+            <h2>Start Project</h2>
+            <div></div>
+          </div>
+
+          <div class="control-grid">
+            <div class="start-project-actions">
+              <button id="loadSampleButton" class="ghost-button" type="button">Load Sample</button>
+              <button id="openProjectButton" class="ghost-button" type="button">Open Project</button>
+              <button id="saveProjectButton" class="ghost-button" type="button">Save Project</button>
+            </div>
+            <p class="status-text">Start from a sample, open a saved project, or import a new profile file.</p>
           </div>
 
           <div class="control">
@@ -566,7 +572,7 @@
           <div class="button-row export-row">
             <button id="exportStlButton">Export STL</button>
             <button id="exportObjButton">Export OBJ</button>
-            <button id="exportJsonButton">Export Surface JSON</button>
+            <button id="exportJsonButton">Export Surface Data JSON</button>
           </div>
 
           <p id="exportUnitsStatus" class="status-text">
