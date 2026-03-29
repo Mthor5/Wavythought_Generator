@@ -6,19 +6,28 @@ import {
   buildExportQuads,
   buildSurfaceGrid,
   getLoopBounds,
+  pointInPolygon,
   polygonArea,
   sampleHeight,
+  sampleCurveSourcePolyline,
   toCanvasPoint,
   toWorldPoint,
 } from "./geometry.js";
-import { importProfile } from "./importers.js";
+import { importProfile, previewImageTrace } from "./importers.js";
 import { createMaterialMaps } from "./materials.js";
 import { exportObjMesh, exportStlMesh, exportSurfaceJson } from "./exporters.js";
 
 const state = createDefaultState();
+const HANDLE_COLORS = {
+  point: { fill: "#f0a34b", stroke: "#7b3c10", emissive: "#a65012" },
+  curve: { fill: "#59a8ff", stroke: "#1a4b80", emissive: "#1b4e84" },
+  center: { fill: "#8dd06b", stroke: "#2f5d17", emissive: "#2f5d17" },
+  selected: { fill: "#f4db5b", stroke: "#8c6d00", emissive: "#8c6d00" },
+};
 
 const elements = {
   workspace: document.querySelector(".workspace"),
+  body: document.body,
   profileCard: document.querySelector(".profile-card"),
   profileCardHeader: document.querySelector(".profile-card-header"),
   profileCanvas: document.getElementById("profileCanvas"),
@@ -26,16 +35,65 @@ const elements = {
   imageImportOptions: document.getElementById("imageImportOptions"),
   imageTracePanel: document.getElementById("imageTracePanel"),
   imageTraceList: document.getElementById("imageTraceList"),
+  applyTraceRegionsButton: document.getElementById("applyTraceRegionsButton"),
   vectorImportOptions: document.getElementById("vectorImportOptions"),
+  profileDropZone: document.getElementById("profileDropZone"),
+  profileDropZoneLabel: document.getElementById("profileDropZoneLabel"),
   profileFileInput: document.getElementById("profileFileInput"),
   importProfileButton: document.getElementById("importProfileButton"),
   profileStatus: document.getElementById("profileStatus"),
   imageThresholdInput: document.getElementById("imageThresholdInput"),
   imageThresholdNumber: document.getElementById("imageThresholdNumber"),
+  imageImportModeThresholdButton: document.getElementById("imageImportModeThresholdButton"),
+  imageImportModeSegmentationButton: document.getElementById("imageImportModeSegmentationButton"),
+  thresholdMethodSettings: document.getElementById("thresholdMethodSettings"),
+  segmentationMethodSettings: document.getElementById("segmentationMethodSettings"),
   invertImageInput: document.getElementById("invertImageInput"),
-  imageTargetRegionsInput: document.getElementById("imageTargetRegionsInput"),
+  imageColorSamplesInput: document.getElementById("imageColorSamplesInput"),
+  imageColorSamplesNumber: document.getElementById("imageColorSamplesNumber"),
+  imageColorToleranceInput: document.getElementById("imageColorToleranceInput"),
+  imageColorToleranceNumber: document.getElementById("imageColorToleranceNumber"),
+  imageMinRegionAreaInput: document.getElementById("imageMinRegionAreaInput"),
+  imageMinRegionAreaNumber: document.getElementById("imageMinRegionAreaNumber"),
+  imageCornerSmoothingInput: document.getElementById("imageCornerSmoothingInput"),
+  imageCornerSmoothingNumber: document.getElementById("imageCornerSmoothingNumber"),
+  imagePathSimplificationInput: document.getElementById("imagePathSimplificationInput"),
+  imagePathSimplificationNumber: document.getElementById("imagePathSimplificationNumber"),
   retraceImageButton: document.getElementById("retraceImageButton"),
   imageTraceStatus: document.getElementById("imageTraceStatus"),
+  imageColorPreviewCard: document.getElementById("imageColorPreviewCard"),
+  imageThresholdPreviewCard: document.getElementById("imageThresholdPreviewCard"),
+  imageColorPreviewCanvas: document.getElementById("imageColorPreviewCanvas"),
+  imageThresholdPreviewCanvas: document.getElementById("imageThresholdPreviewCanvas"),
+  imagePreviewPrimaryLabel: document.getElementById("imagePreviewPrimaryLabel"),
+  imagePreviewSecondaryLabel: document.getElementById("imagePreviewSecondaryLabel"),
+  imagePreviewStatus: document.getElementById("imagePreviewStatus"),
+  imagePreviewModal: document.getElementById("imagePreviewModal"),
+  closeImagePreviewModalButton: document.getElementById("closeImagePreviewModalButton"),
+  modalImageImportModeThresholdButton: document.getElementById("modalImageImportModeThresholdButton"),
+  modalImageImportModeSegmentationButton: document.getElementById("modalImageImportModeSegmentationButton"),
+  modalThresholdMethodSettings: document.getElementById("modalThresholdMethodSettings"),
+  modalSegmentationMethodSettings: document.getElementById("modalSegmentationMethodSettings"),
+  modalImageThresholdInput: document.getElementById("modalImageThresholdInput"),
+  modalImageThresholdNumber: document.getElementById("modalImageThresholdNumber"),
+  modalImageColorToleranceInput: document.getElementById("modalImageColorToleranceInput"),
+  modalImageColorToleranceNumber: document.getElementById("modalImageColorToleranceNumber"),
+  modalImageColorSamplesInput: document.getElementById("modalImageColorSamplesInput"),
+  modalImageColorSamplesNumber: document.getElementById("modalImageColorSamplesNumber"),
+  modalImageMinRegionAreaInput: document.getElementById("modalImageMinRegionAreaInput"),
+  modalImageMinRegionAreaNumber: document.getElementById("modalImageMinRegionAreaNumber"),
+  modalImageCornerSmoothingInput: document.getElementById("modalImageCornerSmoothingInput"),
+  modalImageCornerSmoothingNumber: document.getElementById("modalImageCornerSmoothingNumber"),
+  modalImagePathSimplificationInput: document.getElementById("modalImagePathSimplificationInput"),
+  modalImagePathSimplificationNumber: document.getElementById("modalImagePathSimplificationNumber"),
+  modalInvertImageInput: document.getElementById("modalInvertImageInput"),
+  modalRetraceImageButton: document.getElementById("modalRetraceImageButton"),
+  modalImageColorPreviewCanvas: document.getElementById("modalImageColorPreviewCanvas"),
+  modalImageThresholdPreviewCanvas: document.getElementById("modalImageThresholdPreviewCanvas"),
+  modalImagePreviewPrimaryLabel: document.getElementById("modalImagePreviewPrimaryLabel"),
+  modalImagePreviewSecondaryLabel: document.getElementById("modalImagePreviewSecondaryLabel"),
+  modalImagePreviewStatus: document.getElementById("modalImagePreviewStatus"),
+  modalImageTraceStatus: document.getElementById("modalImageTraceStatus"),
   svgSamplesInput: document.getElementById("svgSamplesInput"),
   svgSamplesNumber: document.getElementById("svgSamplesNumber"),
   unitsMmButton: document.getElementById("unitsMmButton"),
@@ -49,10 +107,17 @@ const elements = {
   heightScaleNumber: document.getElementById("heightScaleNumber"),
   edgeFadeInput: document.getElementById("edgeFadeInput"),
   edgeFadeNumber: document.getElementById("edgeFadeNumber"),
+  edgeFadeAllInput: document.getElementById("edgeFadeAllInput"),
+  showSurfaceResolutionInput: document.getElementById("showSurfaceResolutionInput"),
   woodToggleInput: document.getElementById("woodToggleInput"),
   speciesSelect: document.getElementById("speciesSelect"),
   grainScaleInput: document.getElementById("grainScaleInput"),
   grainScaleNumber: document.getElementById("grainScaleNumber"),
+  grainAxisXButton: document.getElementById("grainAxisXButton"),
+  grainAxisYButton: document.getElementById("grainAxisYButton"),
+  grainAxisZButton: document.getElementById("grainAxisZButton"),
+  themeLightButton: document.getElementById("themeLightButton"),
+  themeDarkButton: document.getElementById("themeDarkButton"),
   addPointSourceButton: document.getElementById("addPointSourceButton"),
   addCurveSourceButton: document.getElementById("addCurveSourceButton"),
   sourceModeStatus: document.getElementById("sourceModeStatus"),
@@ -77,13 +142,16 @@ let camera;
 let controls;
 let transformControls;
 let surfaceMesh;
+let surfaceWireframe;
 let materialMap;
 let alphaMap;
 let currentSurfaceGrid;
 let helperGroup;
+let traceHighlightGroup;
 let resizeObserver;
 let gridGroup;
 let helperSprites = [];
+const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let selectedHelperDescriptor = null;
@@ -108,6 +176,40 @@ const helperDragState = {
   descriptor: null,
   lastWorldPoint: null,
 };
+
+function getCurveCenterPoint(points) {
+  if (!points.length) {
+    return { x: 0, y: 0 };
+  }
+
+  return points.reduce(
+    (accumulator, point) => ({
+      x: accumulator.x + point.x / points.length,
+      y: accumulator.y + point.y / points.length,
+    }),
+    { x: 0, y: 0 },
+  );
+}
+
+function descriptorsMatch(left, right) {
+  return Boolean(
+    left &&
+      right &&
+      left.sourceId === right.sourceId &&
+      left.kind === right.kind &&
+      (left.pointIndex ?? null) === (right.pointIndex ?? null),
+  );
+}
+
+function isSelectedDescriptor(descriptor) {
+  return descriptorsMatch(selectedHelperDescriptor, descriptor);
+}
+
+function setSelectedHelperDescriptor(descriptor) {
+  selectedHelperDescriptor = descriptor ? { ...descriptor } : null;
+  renderProfileCanvas();
+  update3DHelperObjects();
+}
 
 function clampToInput(input, value) {
   const numericValue = Number(value);
@@ -158,6 +260,18 @@ function getImportKindForFile(file) {
     return "image";
   }
   return "vector";
+}
+
+function stageImportFile(file) {
+  if (!file) {
+    return;
+  }
+
+  state.meta.pendingImportFile = file;
+  state.meta.pendingImportKind = getImportKindForFile(file);
+  state.ui.status = `Selected ${file.name}. Adjust import settings, then click Import Selected File.`;
+  syncView();
+  refreshImageTracePreview(file);
 }
 
 function convertUnitValue(value, fromUnits, toUnits) {
@@ -282,6 +396,14 @@ function sanitizeTraceSelection(candidates, selection) {
 
 function buildTraceLoopsFromSelection(candidates, selection) {
   const modes = sanitizeTraceSelection(candidates, selection).modes;
+  const previousSpeciesById = new Map(
+    state.loops
+      .filter((loop) => loop.id)
+      .map((loop) => [loop.id, loop.species]),
+  );
+  const interiorPalette = ["oak", "ash", "maple", "cherry", "padauk", "purpleheart"];
+  const surfaceCandidate = candidates[0];
+
   return candidates
     .map((candidate, index) => {
       const mode = modes[candidate.id] || (index === 0 ? "surface" : "add");
@@ -300,17 +422,45 @@ function buildTraceLoopsFromSelection(candidates, selection) {
         };
       }
 
+      const isInteriorRegion =
+        index > 0 &&
+        surfaceCandidate &&
+        pointInPolygon(getLoopCentroid(candidate.points), surfaceCandidate.points);
+
       return {
         id: candidate.id,
         label: index === 0 ? "Outer Profile" : candidate.label,
-        role: index === 0 ? "outer" : "perimeterAdd",
+        role: index === 0 ? "outer" : isInteriorRegion ? "inner" : "perimeterAdd",
         surfaceMode: "add",
         traceMode: mode,
         points: candidate.points,
-        species: "walnut",
+        species:
+          previousSpeciesById.get(candidate.id) ||
+          (index === 0 ? "walnut" : interiorPalette[(index - 1) % interiorPalette.length]),
       };
     })
     .filter(Boolean);
+}
+
+function traceSelectionsMatch(candidates, leftSelection, rightSelection) {
+  const left = sanitizeTraceSelection(candidates, leftSelection).modes;
+  const right = sanitizeTraceSelection(candidates, rightSelection).modes;
+  return candidates.every((candidate) => left[candidate.id] === right[candidate.id]);
+}
+
+function getLoopCentroid(points) {
+  const total = points.reduce(
+    (accumulator, point) => ({
+      x: accumulator.x + point.x,
+      y: accumulator.y + point.y,
+    }),
+    { x: 0, y: 0 },
+  );
+
+  return {
+    x: total.x / Math.max(points.length, 1),
+    y: total.y / Math.max(points.length, 1),
+  };
 }
 
 function formatAreaReadout(areaValue) {
@@ -322,36 +472,86 @@ function syncImageTraceStatus() {
   const activeImportKind = state.meta.pendingImportKind || state.meta.importKind;
   if (activeImportKind !== "image") {
     elements.imageTraceStatus.textContent = "Adjust image trace settings, then retrace.";
+    elements.modalImageTraceStatus.textContent = "Adjust image trace settings, then retrace.";
     return;
   }
 
   if (state.meta.pendingImportFile) {
-    const targetLabel =
-      state.importSettings.imageTargetRegions > 0
-        ? `Target ${state.importSettings.imageTargetRegions} regions. `
-        : "";
-    elements.imageTraceStatus.textContent = `${targetLabel}Selected ${state.meta.pendingImportFile.name}. Click Import Selected File.`;
+    const message = `Selected ${state.meta.pendingImportFile.name}. Click Import Selected File.`;
+    elements.imageTraceStatus.textContent = message;
+    elements.modalImageTraceStatus.textContent = message;
     return;
   }
 
   const regionCount = state.meta.imageTraceCandidates?.length || 0;
-  const targetLabel =
-    state.importSettings.imageTargetRegions > 0
-      ? `Target ${state.importSettings.imageTargetRegions} regions. `
-      : "";
+  const applied = state.meta.imageTraceAppliedSettings;
+  const preview = state.meta.imageTracePreview;
+  const previewLabel = preview
+    ? `Preview ${preview.sampledColorCount}/${preview.targetColorCount} colors. `
+    : "";
+  const modeLabel =
+    applied.mode === "segmentation"
+      ? `Last retrace v${state.meta.imageTraceRevision}: color regions, colors ${applied.colorSamples}, tolerance ${applied.colorTolerance}, min area ${applied.minRegionArea}%, smoothing ${applied.cornerSmoothing}, simplify ${applied.pathSimplification}.`
+      : `Last retrace v${state.meta.imageTraceRevision}: threshold ${applied.threshold}, ${applied.invert ? "inverted" : "normal"}, colors ${applied.colorSamples}, min area ${applied.minRegionArea}%, smoothing ${applied.cornerSmoothing}, simplify ${applied.pathSimplification}.`;
   const dirtyLabel = state.meta.imageTraceDirty ? "Settings changed. Click Retrace Image." : "";
-  elements.imageTraceStatus.textContent = `${targetLabel}Detected ${regionCount} traced regions. ${dirtyLabel}`.trim();
+  const pendingLabel = traceSelectionsMatch(
+    state.meta.imageTraceCandidates,
+    state.meta.imageTraceSelection,
+    state.meta.imageTraceDraftSelection,
+  )
+    ? ""
+    : "Region changes pending. Click Apply Regions.";
+  const message = `${previewLabel}Detected ${regionCount} traced regions. ${modeLabel} ${dirtyLabel} ${pendingLabel}`.trim();
+  elements.imageTraceStatus.textContent = message;
+  elements.modalImageTraceStatus.textContent = message;
 }
 
 function updateImportOptionsVisibility() {
   const activeImportKind = state.meta.pendingImportKind || state.meta.importKind;
   const isImage = activeImportKind === "image";
+  if (!isImage && state.ui.imagePreviewModalOpen) {
+    setImagePreviewModalOpen(false);
+  }
   elements.imageImportOptions.classList.toggle("is-hidden", !isImage);
   elements.imageTracePanel.classList.toggle(
     "is-hidden",
     activeImportKind !== "image" || !state.meta.imageTraceCandidates?.length || !!state.meta.pendingImportFile,
   );
   elements.vectorImportOptions.classList.toggle("is-hidden", isImage);
+  const segmentationMode = state.importSettings.imageImportMode === "segmentation";
+  elements.imageImportModeThresholdButton.classList.toggle("is-active", !segmentationMode);
+  elements.imageImportModeSegmentationButton.classList.toggle("is-active", segmentationMode);
+  elements.modalImageImportModeThresholdButton.classList.toggle("is-active", !segmentationMode);
+  elements.modalImageImportModeSegmentationButton.classList.toggle("is-active", segmentationMode);
+  elements.thresholdMethodSettings.classList.toggle("is-hidden", segmentationMode);
+  elements.invertImageInput.closest(".control")?.classList.toggle("is-hidden", segmentationMode);
+  elements.segmentationMethodSettings.classList.toggle("is-hidden", !segmentationMode);
+  elements.modalThresholdMethodSettings.classList.toggle("is-hidden", segmentationMode);
+  elements.modalInvertImageInput.closest(".control")?.classList.toggle("is-hidden", segmentationMode);
+  elements.modalSegmentationMethodSettings.classList.toggle("is-hidden", !segmentationMode);
+}
+
+function getPreferredTheme() {
+  return systemThemeMedia.matches ? "dark" : "light";
+}
+
+function syncTheme() {
+  if (state.ui.followSystemTheme) {
+    state.ui.theme = getPreferredTheme();
+  }
+  const dark = state.ui.theme === "dark";
+  elements.body.classList.toggle("lights-off", dark);
+  elements.themeLightButton.classList.toggle("is-active", !dark);
+  elements.themeDarkButton.classList.toggle("is-active", dark);
+  if (scene) {
+    scene.background = new THREE.Color(dark ? "#1b1a20" : "#fdfcfc");
+  }
+}
+
+function setImagePreviewModalOpen(isOpen) {
+  state.ui.imagePreviewModalOpen = isOpen;
+  elements.imagePreviewModal.classList.toggle("is-hidden", !isOpen);
+  elements.imagePreviewModal.setAttribute("aria-hidden", isOpen ? "false" : "true");
 }
 
 function queueImageRetrace(reasonLabel) {
@@ -359,6 +559,129 @@ function queueImageRetrace(reasonLabel) {
   state.ui.status = `${reasonLabel}. Click Retrace Image to update the trace.`;
   syncStatus();
   syncImageTraceStatus();
+}
+
+function clearImageTracePreview() {
+  state.meta.imageTracePreview = null;
+  [
+    elements.imageColorPreviewCanvas,
+    elements.imageThresholdPreviewCanvas,
+    elements.modalImageColorPreviewCanvas,
+    elements.modalImageThresholdPreviewCanvas,
+  ].forEach((canvas) => {
+    const context = canvas.getContext("2d");
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  });
+  elements.imagePreviewStatus.textContent = "Preview appears here for image imports.";
+  elements.modalImagePreviewStatus.textContent = "Preview appears here for image imports.";
+  elements.imagePreviewPrimaryLabel.textContent = "Color sample preview";
+  elements.imagePreviewSecondaryLabel.textContent = "Threshold mask";
+  elements.modalImagePreviewPrimaryLabel.textContent = "Color sample preview";
+  elements.modalImagePreviewSecondaryLabel.textContent = "Threshold mask";
+}
+
+function drawPreviewPixels(canvas, width, height, pixels) {
+  const context = canvas.getContext("2d");
+  canvas.width = width;
+  canvas.height = height;
+  const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
+  context.putImageData(imageData, 0, 0);
+}
+
+function renderImageTracePreview() {
+  const activeImportKind = state.meta.pendingImportKind || state.meta.importKind;
+  if (activeImportKind !== "image") {
+    clearImageTracePreview();
+    return;
+  }
+
+  const preview = state.meta.imageTracePreview;
+  if (!preview) {
+    clearImageTracePreview();
+    return;
+  }
+
+  drawPreviewPixels(
+    elements.imageColorPreviewCanvas,
+    preview.width,
+    preview.height,
+    preview.primaryPreviewData,
+  );
+  drawPreviewPixels(
+    elements.imageThresholdPreviewCanvas,
+    preview.width,
+    preview.height,
+    preview.secondaryPreviewData,
+  );
+  drawPreviewPixels(
+    elements.modalImageColorPreviewCanvas,
+    preview.width,
+    preview.height,
+    preview.primaryPreviewData,
+  );
+  drawPreviewPixels(
+    elements.modalImageThresholdPreviewCanvas,
+    preview.width,
+    preview.height,
+    preview.secondaryPreviewData,
+  );
+
+  elements.imagePreviewPrimaryLabel.textContent = preview.primaryLabel || "Color sample preview";
+  elements.imagePreviewSecondaryLabel.textContent = preview.secondaryLabel || "Threshold mask";
+  elements.modalImagePreviewPrimaryLabel.textContent = preview.primaryLabel || "Color sample preview";
+  elements.modalImagePreviewSecondaryLabel.textContent = preview.secondaryLabel || "Threshold mask";
+
+  const previewMessage =
+    `${preview.mode === "segmentation" ? "Color segmentation" : "Threshold trace"} preview uses ${preview.sampledColorCount}/${preview.targetColorCount} colors and currently traces ${preview.tracedRegionCount} region${preview.tracedRegionCount === 1 ? "" : "s"}.`;
+  elements.imagePreviewStatus.textContent = previewMessage;
+  elements.modalImagePreviewStatus.textContent = previewMessage;
+}
+
+async function refreshImageTracePreview(file = state.meta.pendingImportFile || state.meta.importedFile) {
+  const activeImportKind = state.meta.pendingImportKind || state.meta.importKind;
+  if (!file || activeImportKind !== "image") {
+    clearImageTracePreview();
+    return;
+  }
+
+  const requestId = state.meta.imageTracePreviewRequestId + 1;
+  state.meta.imageTracePreviewRequestId = requestId;
+
+  try {
+    const preview = await previewImageTrace(file, state.importSettings);
+    if (requestId !== state.meta.imageTracePreviewRequestId) {
+      return;
+    }
+    state.meta.imageTracePreview = preview;
+    renderImageTracePreview();
+    syncImageTraceStatus();
+  } catch {
+    if (requestId !== state.meta.imageTracePreviewRequestId) {
+      return;
+    }
+    clearImageTracePreview();
+  }
+}
+
+function setImageImportMode(mode) {
+  if (!["threshold", "segmentation"].includes(mode)) {
+    return;
+  }
+  state.importSettings.imageImportMode = mode;
+  if (state.meta.pendingImportFile && state.meta.pendingImportKind === "image") {
+    state.ui.status = `Updated image import settings for ${state.meta.pendingImportFile.name}. Click Import Selected File.`;
+    syncStatus();
+    syncView();
+    refreshImageTracePreview();
+    return;
+  }
+  if (state.meta.importedFile && state.meta.importKind === "image") {
+    queueImageRetrace("Updated image import method");
+    syncView();
+    refreshImageTracePreview();
+    return;
+  }
+  syncView();
 }
 
 function formatBoundsReadout() {
@@ -495,6 +818,25 @@ function initFloatingProfileCard() {
   resizeObserver.observe(elements.surfaceCanvas);
 }
 
+function initCollapsiblePanels() {
+  document.querySelectorAll(".sidebar .panel").forEach((panel) => {
+    const heading = panel.querySelector(".panel-heading");
+    if (!heading || heading.querySelector(".panel-toggle")) {
+      return;
+    }
+
+    const toggleButton = document.createElement("button");
+    toggleButton.type = "button";
+    toggleButton.className = "ghost-button panel-toggle";
+    toggleButton.textContent = "-";
+    toggleButton.addEventListener("click", () => {
+      const collapsed = panel.classList.toggle("is-collapsed");
+      toggleButton.textContent = collapsed ? "+" : "-";
+    });
+    heading.append(toggleButton);
+  });
+}
+
 function formatSpeciesName(name) {
   return name
     .replace(/([a-z])([A-Z])/g, "$1 $2")
@@ -508,13 +850,13 @@ function preserveLoopSpecies(nextLoops) {
   }));
 }
 
-function applyImageTraceSelection() {
-  const selection = sanitizeTraceSelection(
+function applyImageTraceSelection(selection = state.meta.imageTraceSelection) {
+  const normalizedSelection = sanitizeTraceSelection(
     state.meta.imageTraceCandidates,
-    state.meta.imageTraceSelection,
+    selection,
   );
-  state.meta.imageTraceSelection = selection;
-  state.loops = buildTraceLoopsFromSelection(state.meta.imageTraceCandidates, selection);
+  state.meta.imageTraceSelection = normalizedSelection;
+  state.loops = buildTraceLoopsFromSelection(state.meta.imageTraceCandidates, normalizedSelection);
 }
 
 function applyImportedResult(result, fileName) {
@@ -525,6 +867,20 @@ function applyImportedResult(result, fileName) {
   state.meta.sourceUnits = result.sourceUnits;
   state.meta.imageTraceCandidates = result.traceCandidates || [];
   state.meta.imageTraceDirty = false;
+  state.meta.imageTracePreview = result.tracePreview || null;
+  if (result.importKind === "image") {
+    state.meta.imageTraceRevision += 1;
+    state.meta.imageTraceAppliedSettings = {
+      mode: state.importSettings.imageImportMode,
+      threshold: state.importSettings.imageThreshold,
+      invert: state.importSettings.invertImage,
+      colorSamples: state.importSettings.imageColorSamples,
+      colorTolerance: state.importSettings.imageColorTolerance,
+      minRegionArea: state.importSettings.imageMinRegionArea,
+      cornerSmoothing: state.importSettings.imageCornerSmoothing,
+      pathSimplification: state.importSettings.imagePathSimplification,
+    };
+  }
 
   if (result.importKind === "image" && state.meta.imageTraceCandidates.length) {
     const selection = sanitizeTraceSelection(
@@ -534,6 +890,8 @@ function applyImportedResult(result, fileName) {
         : buildDefaultTraceSelection(state.meta.imageTraceCandidates),
     );
     state.meta.imageTraceSelection = selection;
+    state.meta.imageTraceDraftSelection = selection;
+    state.meta.hoveredTraceId = null;
     applyImageTraceSelection();
     return;
   }
@@ -541,6 +899,10 @@ function applyImportedResult(result, fileName) {
   state.meta.imageTraceSelection = {
     modes: {},
   };
+  state.meta.imageTraceDraftSelection = {
+    modes: {},
+  };
+  state.meta.hoveredTraceId = null;
   state.loops = preserveLoopSpecies(assignLoopMetadata(result.loops));
 }
 
@@ -566,7 +928,14 @@ async function refreshImportedProfile(reasonLabel = "Updated import settings") {
 
     const imported = prepareImportedResult(importedBase);
     applyImportedResult(imported, file.name);
-    state.ui.status = `${reasonLabel} for ${file.name}. ${Math.max(imported.loops.length - 1, 0)} inner loop(s) detected.`;
+    const imageMethodLabel =
+      state.importSettings.imageImportMode === "segmentation"
+        ? `Color regions mode detected ${state.meta.imageTraceCandidates.length} regions from ${state.importSettings.imageColorSamples} sampled colors at tolerance ${state.importSettings.imageColorTolerance}.`
+        : `Threshold mode detected ${state.meta.imageTraceCandidates.length} regions at threshold ${state.importSettings.imageThreshold}.`;
+    state.ui.status =
+      imported.importKind === "image"
+        ? `${reasonLabel} for ${file.name}. Trace v${state.meta.imageTraceRevision}. ${imageMethodLabel}`
+        : `${reasonLabel} for ${file.name}. ${Math.max(imported.loops.length - 1, 0)} inner loop(s) detected.`;
     syncView();
   } catch (error) {
     if (requestId !== state.meta.importRequestId) {
@@ -761,8 +1130,8 @@ function update3DHelperObjects() {
   transformControls.size = Math.max(0.9, pointRadius * 0.75);
 
   const pointMaterial = new THREE.MeshStandardMaterial({
-    color: "#f0a34b",
-    emissive: "#a65012",
+    color: HANDLE_COLORS.point.fill,
+    emissive: HANDLE_COLORS.point.emissive,
     emissiveIntensity: 1.2,
     roughness: 0.42,
     depthTest: false,
@@ -770,8 +1139,8 @@ function update3DHelperObjects() {
     toneMapped: false,
   });
   const curveMaterial = new THREE.MeshStandardMaterial({
-    color: "#59a8ff",
-    emissive: "#1b4e84",
+    color: HANDLE_COLORS.curve.fill,
+    emissive: HANDLE_COLORS.curve.emissive,
     emissiveIntensity: 1.1,
     roughness: 0.38,
     depthTest: false,
@@ -779,16 +1148,33 @@ function update3DHelperObjects() {
     toneMapped: false,
   });
   const centerMaterial = new THREE.MeshStandardMaterial({
-    color: "#8dd06b",
-    emissive: "#2f5d17",
+    color: HANDLE_COLORS.center.fill,
+    emissive: HANDLE_COLORS.center.emissive,
     emissiveIntensity: 1.15,
     roughness: 0.4,
     depthTest: false,
     depthWrite: false,
     toneMapped: false,
   });
+  const selectedMaterial = new THREE.MeshStandardMaterial({
+    color: HANDLE_COLORS.selected.fill,
+    emissive: HANDLE_COLORS.selected.emissive,
+    emissiveIntensity: 1.2,
+    roughness: 0.35,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  });
   const lineMaterial = new THREE.LineBasicMaterial({
-    color: "#7c4a18",
+    color: HANDLE_COLORS.curve.fill,
+    transparent: true,
+    opacity: 0.96,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const selectedLineMaterial = new THREE.LineBasicMaterial({
+    color: HANDLE_COLORS.selected.fill,
     transparent: true,
     opacity: 0.96,
     depthTest: false,
@@ -797,66 +1183,102 @@ function update3DHelperObjects() {
   });
   const sphereGeometry = new THREE.SphereGeometry(pointRadius, 20, 20);
   const boxGeometry = new THREE.BoxGeometry(centerSize, centerSize, centerSize);
-  const pointTexture = createHandleTexture("#f0a34b", "#7b3c10");
-  const curveTexture = createHandleTexture("#59a8ff", "#1a4b80");
-  const centerTexture = createHandleTexture("#8dd06b", "#2f5d17", "square");
+  const pointTexture = createHandleTexture(HANDLE_COLORS.point.fill, HANDLE_COLORS.point.stroke);
+  const curveTexture = createHandleTexture(HANDLE_COLORS.curve.fill, HANDLE_COLORS.curve.stroke);
+  const centerTexture = createHandleTexture(HANDLE_COLORS.center.fill, HANDLE_COLORS.center.stroke, "square");
+  const selectedCircleTexture = createHandleTexture(HANDLE_COLORS.selected.fill, HANDLE_COLORS.selected.stroke);
+  const selectedSquareTexture = createHandleTexture(HANDLE_COLORS.selected.fill, HANDLE_COLORS.selected.stroke, "square");
 
   state.sources.forEach((source) => {
     if (source.type === "point") {
-      const mesh = new THREE.Mesh(sphereGeometry, pointMaterial);
+      const descriptor = { sourceId: source.id, kind: "pointHandle", pointIndex: 0 };
+      const selected = isSelectedDescriptor(descriptor);
+      const mesh = new THREE.Mesh(sphereGeometry, selected ? selectedMaterial : pointMaterial);
       mesh.position.copy(toSurfaceScenePoint(source.points[0], handleOffset));
-      mesh.userData.descriptor = { sourceId: source.id, kind: "pointHandle", pointIndex: 0 };
+      mesh.userData.descriptor = descriptor;
       mesh.renderOrder = 12;
-      addHandleSprite(mesh, pointTexture, 24);
+      addHandleSprite(mesh, selected ? selectedCircleTexture : pointTexture, 24);
       helperGroup.add(mesh);
       return;
     }
 
-    const start = toSurfaceScenePoint(source.points[0], handleOffset);
-    const end = toSurfaceScenePoint(source.points[1], handleOffset);
-    const curvePreviewPoints = buildSurfaceCurvePreviewPoints(
-      source.points[0],
-      source.points[1],
-      32,
-      lineOffset,
-    );
+    const controlPoints = source.points.map((point) => toSurfaceScenePoint(point, handleOffset));
+    const curvePreviewPoints = sampleCurveSourcePolyline(source.points, 56)
+      .map((point) => toSurfaceScenePoint(point, lineOffset));
+    const curveDescriptor = { sourceId: source.id, kind: "curveCenter" };
+    const curveSelected = isSelectedDescriptor(curveDescriptor);
     const line = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(curvePreviewPoints),
-      lineMaterial,
+      curveSelected ? selectedLineMaterial : lineMaterial,
     );
-    line.userData.descriptor = { sourceId: source.id, kind: "curveCenter" };
+    line.userData.descriptor = curveDescriptor;
     line.renderOrder = 11;
     helperGroup.add(line);
 
-    [start, end].forEach((position, pointIndex) => {
-      const mesh = new THREE.Mesh(sphereGeometry, curveMaterial);
+    controlPoints.forEach((position, pointIndex) => {
+      const descriptor = { sourceId: source.id, kind: "curvePoint", pointIndex };
+      const selected = isSelectedDescriptor(descriptor);
+      const mesh = new THREE.Mesh(sphereGeometry, selected ? selectedMaterial : curveMaterial);
       mesh.position.copy(position);
-      mesh.userData.descriptor = { sourceId: source.id, kind: "curvePoint", pointIndex };
+      mesh.userData.descriptor = descriptor;
       mesh.renderOrder = 12;
-      addHandleSprite(mesh, curveTexture, 24);
+      addHandleSprite(mesh, selected ? selectedCircleTexture : curveTexture, 24);
       helperGroup.add(mesh);
     });
 
-    const center = new THREE.Mesh(boxGeometry, centerMaterial);
+    const centerPoint = getCurveCenterPoint(source.points);
+    const center = new THREE.Mesh(boxGeometry, curveSelected ? selectedMaterial : centerMaterial);
     center.position.copy(
-      toSurfaceScenePoint(
-        {
-          x: (source.points[0].x + source.points[1].x) * 0.5,
-          y: (source.points[0].y + source.points[1].y) * 0.5,
-        },
-        handleOffset * 1.15,
-      ),
+      toSurfaceScenePoint(centerPoint, handleOffset * 1.15),
     );
-    center.userData.descriptor = { sourceId: source.id, kind: "curveCenter" };
+    center.userData.descriptor = curveDescriptor;
     center.userData.lastPosition = center.position.clone();
     center.renderOrder = 13;
-    addHandleSprite(center, centerTexture, 28);
+    addHandleSprite(center, curveSelected ? selectedSquareTexture : centerTexture, 28);
     helperGroup.add(center);
   });
 
   if (selectedHelperDescriptor) {
     attachHelperByDescriptor(selectedHelperDescriptor);
   }
+}
+
+function updateTraceHighlightObjects() {
+  if (!traceHighlightGroup) {
+    return;
+  }
+
+  traceHighlightGroup.clear();
+  if (!state.meta.hoveredTraceId || !state.meta.imageTraceCandidates?.length) {
+    return;
+  }
+
+  const candidate = state.meta.imageTraceCandidates.find((item) => item.id === state.meta.hoveredTraceId);
+  if (!candidate) {
+    return;
+  }
+
+  const highlightPoints = candidate.points.map((point) =>
+    toSurfaceScenePoint(point, Math.max(getWorldUnitsPerSourceUnit() * 0.8, 0.03)),
+  );
+  if (!highlightPoints.length) {
+    return;
+  }
+  highlightPoints.push(highlightPoints[0].clone());
+
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(highlightPoints),
+    new THREE.LineBasicMaterial({
+      color: "#3fb6ff",
+      transparent: true,
+      opacity: 0.98,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    }),
+  );
+  line.renderOrder = 25;
+  traceHighlightGroup.add(line);
 }
 
 function getSurfaceFrame() {
@@ -929,6 +1351,17 @@ function buildSurfaceMaterial(colorMapTexture, alphaMapTexture) {
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uGrainScale = { value: state.surface.grainScale };
+    shader.uniforms.uWorldPerSourceUnit = { value: Math.max(getWorldUnitsPerSourceUnit(), 1e-4) };
+    shader.uniforms.uSourceWidth = { value: Math.max(state.meta.sourceBounds?.width || 1, 1) };
+    shader.uniforms.uSourceHeight = { value: Math.max(state.meta.sourceBounds?.height || 1, 1) };
+    shader.uniforms.uGrainAxis = {
+      value:
+        state.surface.grainAxis === "x"
+          ? 0
+          : state.surface.grainAxis === "y"
+            ? 1
+            : 2,
+    };
 
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -946,31 +1379,62 @@ function buildSurfaceMaterial(colorMapTexture, alphaMapTexture) {
         `#include <common>
 varying vec3 vLocalPosition;
 uniform float uGrainScale;
+uniform float uWorldPerSourceUnit;
+uniform float uSourceWidth;
+uniform float uSourceHeight;
+uniform int uGrainAxis;
 `,
       )
       .replace(
         "#include <map_fragment>",
         `#include <map_fragment>
 vec3 baseTone = diffuseColor.rgb;
-float ringScale = max(0.35, uGrainScale);
-vec2 ringPoint = vec2(vLocalPosition.x * 2.2, vLocalPosition.y * 7.0);
-float warpedRadius = length(ringPoint)
-  + sin(vLocalPosition.z * 7.0 * ringScale + vLocalPosition.x * 3.4) * 0.12
-  + sin(vLocalPosition.z * 14.0 * ringScale - vLocalPosition.y * 11.0) * 0.04;
-float rings = 0.5 + 0.5 * sin(warpedRadius * 28.0 * ringScale);
-float pores = 0.5 + 0.5 * sin(vLocalPosition.z * 56.0 * ringScale + vLocalPosition.x * 9.0);
-float cathedrals = 0.5 + 0.5 * sin(vLocalPosition.z * 6.0 * ringScale + sin(vLocalPosition.x * 8.0) * 1.5);
-float grainMask = smoothstep(0.16, 0.86, rings);
-vec3 lightTone = mix(baseTone, vec3(1.0), 0.18);
-vec3 darkTone = mix(baseTone, vec3(0.09, 0.07, 0.05), 0.42);
+float grainScale = clamp(uGrainScale, 0.2, 4.0);
+float sourceScale = max(uWorldPerSourceUnit, 0.0001);
+vec3 sourcePos = vLocalPosition / sourceScale;
+vec2 boardPos = sourcePos.xy;
+vec2 halfSize = vec2(max(uSourceWidth, 1.0), max(uSourceHeight, 1.0)) * 0.5;
+vec2 logCenter = vec2(-halfSize.x * 0.35, -halfSize.y * 1.15);
+vec2 ringVector = (boardPos - logCenter) * vec2(1.0, 0.62);
+float fiberCoord = sourcePos.y;
+float crossCoord = sourcePos.x;
+
+if (uGrainAxis == 0) {
+  boardPos = vec2(sourcePos.y, sourcePos.z);
+  halfSize = vec2(max(uSourceHeight, 1.0), max(uSourceWidth, 1.0)) * 0.5;
+  logCenter = vec2(-halfSize.x * 1.1, 0.0);
+  ringVector = (boardPos - logCenter) * vec2(0.75, 1.0);
+  fiberCoord = sourcePos.x;
+  crossCoord = sourcePos.y;
+} else if (uGrainAxis == 1) {
+  boardPos = vec2(sourcePos.x, sourcePos.z);
+  halfSize = vec2(max(uSourceWidth, 1.0), max(uSourceHeight, 1.0)) * 0.5;
+  logCenter = vec2(0.0, -halfSize.y * 1.1);
+  ringVector = (boardPos - logCenter) * vec2(1.0, 0.75);
+  fiberCoord = sourcePos.y;
+  crossCoord = sourcePos.x;
+}
+
+float ringSpacing = max(3.0, 14.0 / grainScale);
+float longWave = sin(boardPos.x * 0.035 + boardPos.y * 0.012) * 0.8;
+float shortWave = sin(boardPos.y * 0.075 - boardPos.x * 0.024) * 0.32;
+float radial = length(ringVector) + longWave + shortWave;
+float rings = 0.5 + 0.5 * sin((radial / ringSpacing) * 6.28318530718);
+
+float fibers = 0.5 + 0.5 * sin(fiberCoord * 0.16 * grainScale + sin(crossCoord * 0.03) * 1.8);
+float pores = 0.5 + 0.5 * sin(crossCoord * 0.055 + boardPos.y * 0.022 * grainScale);
+float grainMask = smoothstep(0.18, 0.82, rings);
+
+vec3 lightTone = mix(baseTone, vec3(1.0), 0.12);
+vec3 darkTone = mix(baseTone, vec3(0.08, 0.06, 0.04), 0.34);
 vec3 ringTone = mix(darkTone, lightTone, grainMask);
-ringTone *= mix(0.92, 1.08, pores * 0.22 + cathedrals * 0.18);
-diffuseColor.rgb = mix(baseTone, ringTone, 0.86);
+ringTone *= mix(0.95, 1.05, fibers * 0.16 + pores * 0.1);
+diffuseColor.rgb = mix(baseTone, ringTone, 0.72);
 `,
       );
   };
 
-  material.customProgramCacheKey = () => `wood-cylinder-${state.surface.grainScale.toFixed(2)}`;
+  material.customProgramCacheKey = () => `wood-cylinder-${state.surface.grainAxis}-${state.surface.grainScale.toFixed(2)}`;
   return material;
 }
 
@@ -1028,6 +1492,7 @@ function updateSceneGrid() {
   const bounds = currentSurfaceGrid.bounds;
   const extentX = Math.max(Math.abs(bounds.minX), Math.abs(bounds.maxX)) + majorSpacing * 2;
   const extentY = Math.max(Math.abs(bounds.minY), Math.abs(bounds.maxY)) + majorSpacing * 2;
+  const dark = state.ui.theme === "dark";
 
   const minorPositions = buildGridLinePositions(extentX, extentY, minorSpacing);
   const majorPositions = buildGridLinePositions(extentX, extentY, majorSpacing);
@@ -1037,7 +1502,11 @@ function updateSceneGrid() {
     minorGeometry.setAttribute("position", new THREE.Float32BufferAttribute(minorPositions, 3));
     const minorLines = new THREE.LineSegments(
       minorGeometry,
-      new THREE.LineBasicMaterial({ color: "#d8c9b7", transparent: true, opacity: 0.48 }),
+      new THREE.LineBasicMaterial({
+        color: dark ? "#4c4454" : "#d8c9b7",
+        transparent: true,
+        opacity: dark ? 0.34 : 0.48,
+      }),
     );
     gridGroup.add(minorLines);
   }
@@ -1046,7 +1515,11 @@ function updateSceneGrid() {
   majorGeometry.setAttribute("position", new THREE.Float32BufferAttribute(majorPositions, 3));
   const majorLines = new THREE.LineSegments(
     majorGeometry,
-    new THREE.LineBasicMaterial({ color: "#b79f88", transparent: true, opacity: 0.82 }),
+    new THREE.LineBasicMaterial({
+      color: dark ? "#7a6d87" : "#b79f88",
+      transparent: true,
+      opacity: dark ? 0.62 : 0.82,
+    }),
   );
   gridGroup.add(majorLines);
 
@@ -1058,7 +1531,11 @@ function updateSceneGrid() {
   ]);
   const axisLines = new THREE.LineSegments(
     axisGeometry,
-    new THREE.LineBasicMaterial({ color: "#8d7558", transparent: true, opacity: 0.95 }),
+    new THREE.LineBasicMaterial({
+      color: dark ? "#ff7bd5" : "#8d7558",
+      transparent: true,
+      opacity: dark ? 0.8 : 0.95,
+    }),
   );
   gridGroup.add(axisLines);
 
@@ -1105,6 +1582,9 @@ function initThree() {
   gridGroup = new THREE.Group();
   scene.add(gridGroup);
 
+  traceHighlightGroup = new THREE.Group();
+  scene.add(traceHighlightGroup);
+
   helperGroup = new THREE.Group();
   scene.add(helperGroup);
 
@@ -1143,6 +1623,12 @@ function updateThreeSurface() {
     surfaceMesh.geometry.dispose();
     surfaceMesh.material.dispose();
   }
+  if (surfaceWireframe) {
+    scene.remove(surfaceWireframe);
+    surfaceWireframe.geometry.dispose();
+    surfaceWireframe.material.dispose();
+    surfaceWireframe = null;
+  }
   if (materialMap) {
     materialMap.dispose();
   }
@@ -1174,7 +1660,23 @@ function updateThreeSurface() {
   surfaceMesh = new THREE.Mesh(geometry, material);
   surfaceMesh.position.z = -currentSurfaceGrid.minHeight;
   scene.add(surfaceMesh);
+
+  if (state.surface.showResolutionEdges) {
+    const wireframeGeometry = new THREE.WireframeGeometry(geometry);
+    const wireframeMaterial = new THREE.LineBasicMaterial({
+      color: "#5d4a38",
+      transparent: true,
+      opacity: 0.42,
+      depthTest: true,
+      depthWrite: false,
+    });
+    surfaceWireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+    surfaceWireframe.position.z = surfaceMesh.position.z + 0.0015;
+    scene.add(surfaceWireframe);
+  }
+
   update3DHelperObjects();
+  updateTraceHighlightObjects();
   updateSceneGrid();
 }
 
@@ -1239,20 +1741,38 @@ function renderProfileCanvas() {
       profileContext.stroke();
     });
 
-  state.sources.forEach((source) => {
-    profileContext.strokeStyle = source.operation === "subtract" ? "#9a3f31" : "#6f5639";
-    profileContext.fillStyle = source.operation === "multiply" ? "#6d4d8f" : "#b47b45";
-    profileContext.lineWidth = 2;
+  if (state.meta.hoveredTraceId && state.meta.imageTraceCandidates?.length) {
+    const candidate = state.meta.imageTraceCandidates.find((item) => item.id === state.meta.hoveredTraceId);
+    if (candidate) {
+      drawLoop(profileContext, { points: candidate.points }, bounds, width, height);
+      profileContext.fillStyle = "rgba(63, 182, 255, 0.12)";
+      profileContext.fill();
+      profileContext.strokeStyle = "#3fb6ff";
+      profileContext.lineWidth = 3;
+      profileContext.stroke();
+    }
+  }
 
+  state.sources.forEach((source) => {
     if (source.type === "point") {
+      const descriptor = { sourceId: source.id, kind: "pointHandle", pointIndex: 0 };
+      const colors = isSelectedDescriptor(descriptor) ? HANDLE_COLORS.selected : HANDLE_COLORS.point;
       const point = toCanvasPoint(source.points[0], bounds, width, height);
       profileContext.beginPath();
       profileContext.arc(point.x, point.y, 7, 0, Math.PI * 2);
+      profileContext.fillStyle = colors.fill;
+      profileContext.strokeStyle = colors.stroke;
+      profileContext.lineWidth = 2;
       profileContext.fill();
       profileContext.stroke();
     } else {
+      const curveDescriptor = { sourceId: source.id, kind: "curveCenter" };
+      const curveColors = isSelectedDescriptor(curveDescriptor) ? HANDLE_COLORS.selected : HANDLE_COLORS.curve;
+      const curvePreviewPoints = sampleCurveSourcePolyline(source.points, 56);
+      profileContext.strokeStyle = curveColors.fill;
+      profileContext.lineWidth = isSelectedDescriptor(curveDescriptor) ? 3 : 2.2;
       profileContext.beginPath();
-      source.points.forEach((point, index) => {
+      curvePreviewPoints.forEach((point, index) => {
         const canvasPoint = toCanvasPoint(point, bounds, width, height);
         if (index === 0) {
           profileContext.moveTo(canvasPoint.x, canvasPoint.y);
@@ -1261,21 +1781,55 @@ function renderProfileCanvas() {
         }
       });
       profileContext.stroke();
-      source.points.forEach((point) => {
+      source.points.forEach((point, pointIndex) => {
+        const descriptor = { sourceId: source.id, kind: "curvePoint", pointIndex };
+        const colors = isSelectedDescriptor(descriptor) ? HANDLE_COLORS.selected : HANDLE_COLORS.curve;
         const canvasPoint = toCanvasPoint(point, bounds, width, height);
         profileContext.beginPath();
         profileContext.arc(canvasPoint.x, canvasPoint.y, 5, 0, Math.PI * 2);
+        profileContext.fillStyle = colors.fill;
+        profileContext.strokeStyle = colors.stroke;
+        profileContext.lineWidth = 1.8;
         profileContext.fill();
+        profileContext.stroke();
       });
+
+      const centerPoint = toCanvasPoint(getCurveCenterPoint(source.points), bounds, width, height);
+      const centerColors = isSelectedDescriptor(curveDescriptor) ? HANDLE_COLORS.selected : HANDLE_COLORS.center;
+      profileContext.beginPath();
+      profileContext.roundRect(centerPoint.x - 5, centerPoint.y - 5, 10, 10, 3);
+      profileContext.fillStyle = centerColors.fill;
+      profileContext.strokeStyle = centerColors.stroke;
+      profileContext.lineWidth = 1.8;
+      profileContext.fill();
+      profileContext.stroke();
     }
   });
 
-  if (state.ui.pendingCurveStart) {
-    const pending = toCanvasPoint(state.ui.pendingCurveStart, bounds, width, height);
-    profileContext.fillStyle = "#1f5d62";
+  if (state.ui.pendingCurvePoints.length) {
+    const pendingPreview = sampleCurveSourcePolyline(state.ui.pendingCurvePoints, 40);
+    profileContext.strokeStyle = HANDLE_COLORS.curve.fill;
+    profileContext.lineWidth = 2;
     profileContext.beginPath();
-    profileContext.arc(pending.x, pending.y, 6, 0, Math.PI * 2);
-    profileContext.fill();
+    pendingPreview.forEach((point, index) => {
+      const canvasPoint = toCanvasPoint(point, bounds, width, height);
+      if (index === 0) {
+        profileContext.moveTo(canvasPoint.x, canvasPoint.y);
+      } else {
+        profileContext.lineTo(canvasPoint.x, canvasPoint.y);
+      }
+    });
+    profileContext.stroke();
+
+    profileContext.fillStyle = HANDLE_COLORS.curve.fill;
+    profileContext.strokeStyle = HANDLE_COLORS.curve.stroke;
+    state.ui.pendingCurvePoints.forEach((point) => {
+      const pending = toCanvasPoint(point, bounds, width, height);
+      profileContext.beginPath();
+      profileContext.arc(pending.x, pending.y, 6, 0, Math.PI * 2);
+      profileContext.fill();
+      profileContext.stroke();
+    });
   }
 }
 
@@ -1307,23 +1861,49 @@ function pick2DSourceHandle(canvasPoint) {
         best = {
           distance,
           sourceId: source.id,
-          mode: source.type === "curve" ? "point" : "point",
+          kind: source.type === "curve" ? "curvePoint" : "pointHandle",
+          mode: "point",
           pointIndex,
         };
       }
     });
 
     if (source.type === "curve") {
-      const start = toCanvasPoint(source.points[0], bounds, elements.profileCanvas.width, elements.profileCanvas.height);
-      const end = toCanvasPoint(source.points[1], bounds, elements.profileCanvas.width, elements.profileCanvas.height);
-      const distance = distanceToCanvasSegment(canvasPoint, start, end);
-      if ((!best || distance < best.distance) && distance <= 12) {
+      const centerPoint = toCanvasPoint(
+        getCurveCenterPoint(source.points),
+        bounds,
+        elements.profileCanvas.width,
+        elements.profileCanvas.height,
+      );
+      const centerDistance = Math.max(
+        Math.abs(canvasPoint.x - centerPoint.x),
+        Math.abs(canvasPoint.y - centerPoint.y),
+      );
+      if ((!best || centerDistance < best.distance) && centerDistance <= 10) {
         best = {
-          distance,
+          distance: centerDistance,
           sourceId: source.id,
+          kind: "curveCenter",
           mode: "curve",
           pointIndex: null,
         };
+      }
+
+      const curvePreviewPoints = sampleCurveSourcePolyline(source.points, 56)
+        .map((point) =>
+          toCanvasPoint(point, bounds, elements.profileCanvas.width, elements.profileCanvas.height),
+        );
+      for (let index = 0; index < curvePreviewPoints.length - 1; index += 1) {
+        const distance = distanceToCanvasSegment(canvasPoint, curvePreviewPoints[index], curvePreviewPoints[index + 1]);
+        if ((!best || distance < best.distance) && distance <= 12) {
+          best = {
+            distance,
+            sourceId: source.id,
+            kind: "curveCenter",
+            mode: "curve",
+            pointIndex: null,
+          };
+        }
       }
     }
   });
@@ -1355,6 +1935,11 @@ function handleProfilePointerDown(event) {
   profileDragState.mode = hit.mode;
   profileDragState.sourceId = hit.sourceId;
   profileDragState.pointIndex = hit.pointIndex;
+  setSelectedHelperDescriptor({
+    sourceId: hit.sourceId,
+    kind: hit.kind,
+    pointIndex: hit.pointIndex,
+  });
   profileDragState.lastWorldPoint = toWorldPoint(
     canvasPoint,
     bounds,
@@ -1475,8 +2060,7 @@ function handleSurfacePointerDown(event) {
     return;
   }
 
-  selectedHelperDescriptor = picked.userData.descriptor;
-  attachHelperByDescriptor(selectedHelperDescriptor);
+  setSelectedHelperDescriptor(picked.userData.descriptor);
   helperDragState.active = true;
   helperDragState.pointerId = event.pointerId;
   helperDragState.descriptor = selectedHelperDescriptor;
@@ -1697,19 +2281,20 @@ function renderRegionList() {
 function renderImageTraceList() {
   if (!state.meta.imageTraceCandidates?.length) {
     elements.imageTraceList.innerHTML = "";
+    elements.applyTraceRegionsButton.disabled = true;
     return;
   }
 
   const selection = sanitizeTraceSelection(
     state.meta.imageTraceCandidates,
-    state.meta.imageTraceSelection,
+    state.meta.imageTraceDraftSelection,
   );
-  state.meta.imageTraceSelection = selection;
+  state.meta.imageTraceDraftSelection = selection;
   const rows = state.meta.imageTraceCandidates
     .map((candidate, index) => {
       const mode = selection.modes[candidate.id] || (index === 0 ? "surface" : "add");
       return `
-        <div class="trace-row">
+        <div class="trace-row" data-trace-id="${candidate.id}">
           <span class="trace-row-label">
             <strong>${candidate.label}${index === 0 ? " - Surface" : ""}</strong>
             <span>${index === 0 ? "Largest traced region" : "Perimeter region"}</span>
@@ -1732,17 +2317,40 @@ function renderImageTraceList() {
     .join("");
 
   elements.imageTraceList.innerHTML = `<article class="trace-card trace-list-card">${rows}</article>`;
+  elements.applyTraceRegionsButton.disabled = traceSelectionsMatch(
+    state.meta.imageTraceCandidates,
+    state.meta.imageTraceSelection,
+    state.meta.imageTraceDraftSelection,
+  );
 
   elements.imageTraceList.querySelectorAll(".trace-mode-select").forEach((select) => {
     select.addEventListener("change", (event) => {
-      state.meta.imageTraceSelection = sanitizeTraceSelection(state.meta.imageTraceCandidates, {
+      state.meta.imageTraceDraftSelection = sanitizeTraceSelection(state.meta.imageTraceCandidates, {
         modes: {
-          ...state.meta.imageTraceSelection.modes,
+          ...state.meta.imageTraceDraftSelection.modes,
           [event.target.dataset.traceId]: event.target.value,
         },
       });
-      applyImageTraceSelection();
-      syncView();
+      state.ui.status = "Trace region changes pending. Click Apply Regions.";
+      syncStatus();
+      renderImageTraceList();
+      syncImageTraceStatus();
+    });
+  });
+
+  elements.imageTraceList.querySelectorAll(".trace-row").forEach((row) => {
+    row.addEventListener("mouseenter", () => {
+      state.meta.hoveredTraceId = row.dataset.traceId;
+      renderProfileCanvas();
+      updateTraceHighlightObjects();
+    });
+    row.addEventListener("mouseleave", () => {
+      if (state.meta.hoveredTraceId !== row.dataset.traceId) {
+        return;
+      }
+      state.meta.hoveredTraceId = null;
+      renderProfileCanvas();
+      updateTraceHighlightObjects();
     });
   });
 }
@@ -1753,17 +2361,13 @@ function syncStatus() {
     state.ui.placementMode === "point"
       ? "Click anywhere inside the profile to place a point wave source."
       : state.ui.placementMode === "curve"
-        ? state.ui.pendingCurveStart
-          ? "Click a second time to finish the curve source."
-          : "Click the first point of the curve source."
+        ? state.ui.pendingCurvePoints.length
+          ? `Click to add curve points. Press Enter to finish (${state.ui.pendingCurvePoints.length} point${state.ui.pendingCurvePoints.length === 1 ? "" : "s"}).`
+          : "Click to add the first curve point. Press Enter when the spline is complete."
         : "Click Add Point or Add Curve, then place the source in the 2D view.";
 }
 
 function syncView() {
-  elements.imageThresholdInput.value = String(state.importSettings.imageThreshold);
-  elements.imageThresholdNumber.value = String(state.importSettings.imageThreshold);
-  elements.invertImageInput.checked = state.importSettings.invertImage;
-  elements.imageTargetRegionsInput.value = String(state.importSettings.imageTargetRegions);
   elements.svgSamplesInput.value = String(state.importSettings.curveSamples);
   elements.svgSamplesNumber.value = String(state.importSettings.curveSamples);
   elements.unitsMmButton.classList.toggle("is-active", state.importSettings.units === "mm");
@@ -1771,6 +2375,9 @@ function syncView() {
   elements.importWidthInput.value = Number(state.importSettings.importWidth).toFixed(3);
   elements.importHeightInput.value = Number(state.importSettings.importHeight).toFixed(3);
   elements.aspectLockInput.checked = state.importSettings.aspectLocked;
+  elements.profileDropZoneLabel.textContent = state.meta.pendingImportFile
+    ? state.meta.pendingImportFile.name
+    : "Choose file or drag it here";
   elements.importProfileButton.disabled = !state.meta.pendingImportFile;
   elements.importProfileButton.textContent = state.meta.pendingImportFile
     ? `Import ${state.meta.pendingImportFile.name}`
@@ -1781,15 +2388,21 @@ function syncView() {
   elements.heightScaleNumber.value = String(state.surface.heightScale);
   elements.edgeFadeInput.value = String(state.surface.edgeFade);
   elements.edgeFadeNumber.value = String(state.surface.edgeFade);
+  elements.edgeFadeAllInput.checked = state.surface.edgeFadeAll;
+  elements.showSurfaceResolutionInput.checked = state.surface.showResolutionEdges;
   elements.woodToggleInput.checked = state.surface.woodEnabled;
   elements.speciesSelect.value = state.surface.species;
   elements.grainScaleInput.value = String(state.surface.grainScale);
   elements.grainScaleNumber.value = String(state.surface.grainScale);
+  elements.grainAxisXButton.classList.toggle("is-active", state.surface.grainAxis === "x");
+  elements.grainAxisYButton.classList.toggle("is-active", state.surface.grainAxis === "y");
+  elements.grainAxisZButton.classList.toggle("is-active", state.surface.grainAxis === "z");
 
   updateImportOptionsVisibility();
   elements.bboxReadout.textContent = formatBoundsReadout();
   elements.toggleHelpersButton.textContent = state.ui.show3DHelpers ? "Hide Guides" : "Show Guides";
-  syncImageTraceStatus();
+  syncTheme();
+  syncImageTraceControls();
   renderImageTraceList();
   renderSourceList();
   renderRegionList();
@@ -1914,10 +2527,21 @@ function resetToSample() {
   state.meta.sourceUnits = fresh.meta.sourceUnits;
   state.meta.imageTraceCandidates = fresh.meta.imageTraceCandidates;
   state.meta.imageTraceSelection = fresh.meta.imageTraceSelection;
+  state.meta.imageTraceDraftSelection = fresh.meta.imageTraceDraftSelection;
+  state.meta.hoveredTraceId = fresh.meta.hoveredTraceId;
   state.meta.imageTraceDirty = fresh.meta.imageTraceDirty;
+  state.meta.imageTraceRevision = fresh.meta.imageTraceRevision;
+  state.meta.imageTracePreview = fresh.meta.imageTracePreview;
+  state.meta.imageTracePreviewRequestId = fresh.meta.imageTracePreviewRequestId;
+  state.meta.imageTraceAppliedSettings = fresh.meta.imageTraceAppliedSettings;
   state.importSettings.imageThreshold = fresh.importSettings.imageThreshold;
+  state.importSettings.imageImportMode = fresh.importSettings.imageImportMode;
   state.importSettings.invertImage = fresh.importSettings.invertImage;
-  state.importSettings.imageTargetRegions = fresh.importSettings.imageTargetRegions;
+  state.importSettings.imageColorTolerance = fresh.importSettings.imageColorTolerance;
+  state.importSettings.imageColorSamples = fresh.importSettings.imageColorSamples;
+  state.importSettings.imageMinRegionArea = fresh.importSettings.imageMinRegionArea;
+  state.importSettings.imageCornerSmoothing = fresh.importSettings.imageCornerSmoothing;
+  state.importSettings.imagePathSimplification = fresh.importSettings.imagePathSimplification;
   state.importSettings.curveSamples = fresh.importSettings.curveSamples;
   state.importSettings.units = fresh.importSettings.units;
   state.importSettings.importWidth = fresh.importSettings.importWidth;
@@ -1925,6 +2549,7 @@ function resetToSample() {
   state.importSettings.aspectLocked = fresh.importSettings.aspectLocked;
   state.ui.status = "Loaded the bundled sample profile.";
   elements.profileFileInput.value = "";
+  state.ui.pendingCurvePoints = [];
   populateSpeciesSelects();
   syncView();
   resetSurfaceView();
@@ -1935,11 +2560,7 @@ async function handleImport(event) {
   if (!file) {
     return;
   }
-
-  state.meta.pendingImportFile = file;
-  state.meta.pendingImportKind = getImportKindForFile(file);
-  state.ui.status = `Selected ${file.name}. Adjust import settings, then click Import Selected File.`;
-  syncView();
+  stageImportFile(file);
 }
 
 async function importPendingFile() {
@@ -1980,7 +2601,14 @@ async function importPendingFile() {
     state.meta.pendingImportFile = null;
     state.meta.pendingImportKind = null;
     applyImportedResult(imported, file.name);
-    state.ui.status = `Imported ${file.name}. Largest loop is driving the surface; ${Math.max(imported.loops.length - 1, 0)} inner loop(s) are used as color regions.`;
+    const imageMethodLabel =
+      state.importSettings.imageImportMode === "segmentation"
+        ? `Color regions mode detected ${state.meta.imageTraceCandidates.length} regions from ${state.importSettings.imageColorSamples} sampled colors at tolerance ${state.importSettings.imageColorTolerance}.`
+        : `Threshold mode detected ${state.meta.imageTraceCandidates.length} regions at threshold ${state.importSettings.imageThreshold}.`;
+    state.ui.status =
+      imported.importKind === "image"
+        ? `Imported ${file.name}. Trace v${state.meta.imageTraceRevision}. ${imageMethodLabel}`
+        : `Imported ${file.name}. Largest loop is driving the surface; ${Math.max(imported.loops.length - 1, 0)} inner loop(s) are used as color regions.`;
     syncView();
     resetSurfaceView();
   } catch (error) {
@@ -2015,81 +2643,219 @@ function addSourceFromCanvas(event) {
     return;
   }
 
-  if (!state.ui.pendingCurveStart) {
-    state.ui.pendingCurveStart = worldPoint;
-    syncView();
+  state.ui.pendingCurvePoints = [...state.ui.pendingCurvePoints, worldPoint];
+  state.ui.status = `Added curve point ${state.ui.pendingCurvePoints.length}. Press Enter to finish the spline.`;
+  syncView();
+}
+
+function finalizePendingCurveSource() {
+  if (state.ui.placementMode !== "curve" || state.ui.pendingCurvePoints.length < 2) {
     return;
   }
 
   const curveCount = state.sources.filter((source) => source.type === "curve").length + 1;
-  state.sources.push(createSource("curve", [state.ui.pendingCurveStart, worldPoint], curveCount));
-  state.ui.pendingCurveStart = null;
+  state.sources.push(createSource("curve", state.ui.pendingCurvePoints, curveCount));
+  state.ui.pendingCurvePoints = [];
   state.ui.placementMode = null;
-  state.ui.status = "Added a curve wave source.";
+  state.ui.status = "Added a spline curve wave source.";
+  syncView();
+}
+
+function syncImageTraceControls() {
+  elements.imageThresholdInput.value = String(state.importSettings.imageThreshold);
+  elements.imageThresholdNumber.value = String(state.importSettings.imageThreshold);
+  elements.modalImageThresholdInput.value = String(state.importSettings.imageThreshold);
+  elements.modalImageThresholdNumber.value = String(state.importSettings.imageThreshold);
+  elements.invertImageInput.checked = state.importSettings.invertImage;
+  elements.modalInvertImageInput.checked = state.importSettings.invertImage;
+  elements.imageColorToleranceInput.value = String(state.importSettings.imageColorTolerance);
+  elements.imageColorToleranceNumber.value = String(state.importSettings.imageColorTolerance);
+  elements.modalImageColorToleranceInput.value = String(state.importSettings.imageColorTolerance);
+  elements.modalImageColorToleranceNumber.value = String(state.importSettings.imageColorTolerance);
+  elements.imageColorSamplesInput.value = String(state.importSettings.imageColorSamples);
+  elements.imageColorSamplesNumber.value = String(state.importSettings.imageColorSamples);
+  elements.modalImageColorSamplesInput.value = String(state.importSettings.imageColorSamples);
+  elements.modalImageColorSamplesNumber.value = String(state.importSettings.imageColorSamples);
+  elements.imageMinRegionAreaInput.value = String(state.importSettings.imageMinRegionArea);
+  elements.imageMinRegionAreaNumber.value = String(state.importSettings.imageMinRegionArea);
+  elements.modalImageMinRegionAreaInput.value = String(state.importSettings.imageMinRegionArea);
+  elements.modalImageMinRegionAreaNumber.value = String(state.importSettings.imageMinRegionArea);
+  elements.imageCornerSmoothingInput.value = String(state.importSettings.imageCornerSmoothing);
+  elements.imageCornerSmoothingNumber.value = String(state.importSettings.imageCornerSmoothing);
+  elements.modalImageCornerSmoothingInput.value = String(state.importSettings.imageCornerSmoothing);
+  elements.modalImageCornerSmoothingNumber.value = String(state.importSettings.imageCornerSmoothing);
+  elements.imagePathSimplificationInput.value = String(state.importSettings.imagePathSimplification);
+  elements.imagePathSimplificationNumber.value = String(state.importSettings.imagePathSimplification);
+  elements.modalImagePathSimplificationInput.value = String(state.importSettings.imagePathSimplification);
+  elements.modalImagePathSimplificationNumber.value = String(state.importSettings.imagePathSimplification);
+  elements.retraceImageButton.disabled = !(state.meta.importedFile && state.meta.importKind === "image");
+  elements.retraceImageButton.textContent = state.meta.imageTraceDirty ? "Retrace Image*" : "Retrace Image";
+  elements.modalRetraceImageButton.disabled = !(state.meta.importedFile && state.meta.importKind === "image");
+  elements.modalRetraceImageButton.textContent = state.meta.imageTraceDirty ? "Retrace Image*" : "Retrace Image";
+  setImagePreviewModalOpen(state.ui.imagePreviewModalOpen);
+  updateImportOptionsVisibility();
+  syncImageTraceStatus();
+  renderImageTracePreview();
+}
+
+function handleImageTraceSettingChange(reasonLabel) {
+  if (state.meta.pendingImportFile && state.meta.pendingImportKind === "image") {
+    state.ui.status = `Updated image trace settings for ${state.meta.pendingImportFile.name}. Click Import Selected File.`;
+    syncImageTraceControls();
+    syncStatus();
+    refreshImageTracePreview();
+    return;
+  }
+  if (state.meta.importedFile && state.meta.importKind === "image") {
+    queueImageRetrace(reasonLabel);
+    syncImageTraceControls();
+    refreshImageTracePreview();
+    return;
+  }
   syncView();
 }
 
 function wireEvents() {
   elements.profileFileInput.addEventListener("change", handleImport);
+  elements.profileDropZone.addEventListener("dragenter", (event) => {
+    event.preventDefault();
+    elements.profileDropZone.classList.add("is-dragging");
+  });
+  elements.profileDropZone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    elements.profileDropZone.classList.add("is-dragging");
+  });
+  elements.profileDropZone.addEventListener("dragleave", (event) => {
+    if (event.currentTarget.contains(event.relatedTarget)) {
+      return;
+    }
+    elements.profileDropZone.classList.remove("is-dragging");
+  });
+  elements.profileDropZone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    elements.profileDropZone.classList.remove("is-dragging");
+    const [file] = event.dataTransfer?.files || [];
+    if (!file) {
+      return;
+    }
+    stageImportFile(file);
+  });
   elements.importProfileButton.addEventListener("click", importPendingFile);
   elements.loadSampleButton.addEventListener("click", resetToSample);
+  elements.themeLightButton.addEventListener("click", () => {
+    state.ui.theme = "light";
+    state.ui.followSystemTheme = false;
+    syncView();
+  });
+  elements.themeDarkButton.addEventListener("click", () => {
+    state.ui.theme = "dark";
+    state.ui.followSystemTheme = false;
+    syncView();
+  });
+  elements.imageImportModeThresholdButton.addEventListener("click", () => {
+    setImageImportMode("threshold");
+  });
+  elements.imageImportModeSegmentationButton.addEventListener("click", () => {
+    setImageImportMode("segmentation");
+  });
+  elements.modalImageImportModeThresholdButton.addEventListener("click", () => {
+    setImageImportMode("threshold");
+  });
+  elements.modalImageImportModeSegmentationButton.addEventListener("click", () => {
+    setImageImportMode("segmentation");
+  });
+  [elements.imageColorPreviewCard, elements.imageThresholdPreviewCard].forEach((trigger) => {
+    trigger.addEventListener("click", () => {
+      if ((state.meta.pendingImportKind || state.meta.importKind) !== "image") {
+        return;
+      }
+      setImagePreviewModalOpen(true);
+    });
+  });
+  elements.closeImagePreviewModalButton.addEventListener("click", () => {
+    setImagePreviewModalOpen(false);
+  });
+  elements.imagePreviewModal.addEventListener("click", (event) => {
+    if (event.target === elements.imagePreviewModal) {
+      setImagePreviewModalOpen(false);
+    }
+  });
 
-  bindPairedControl(elements.imageThresholdInput, elements.imageThresholdNumber, (value) => {
+  const applyImageThreshold = (value) => {
     state.importSettings.imageThreshold = Number(value);
-    if (state.meta.pendingImportFile && state.meta.pendingImportKind === "image") {
-      state.ui.status = `Updated image trace settings for ${state.meta.pendingImportFile.name}. Click Import Selected File.`;
-      syncStatus();
-      syncImageTraceStatus();
-      return;
-    }
-    if (state.meta.importedFile && state.meta.importKind === "image") {
-      queueImageRetrace("Updated image threshold");
-      return;
-    }
-    syncView();
-  });
+    handleImageTraceSettingChange("Updated image threshold");
+  };
+  bindPairedControl(elements.imageThresholdInput, elements.imageThresholdNumber, applyImageThreshold);
+  bindPairedControl(elements.modalImageThresholdInput, elements.modalImageThresholdNumber, applyImageThreshold);
+
+  const applyColorTolerance = (value) => {
+    state.importSettings.imageColorTolerance = Math.max(0, Math.round(Number(value) || 0));
+    handleImageTraceSettingChange("Updated color merge tolerance");
+  };
+  bindPairedControl(elements.imageColorToleranceInput, elements.imageColorToleranceNumber, applyColorTolerance);
+  bindPairedControl(elements.modalImageColorToleranceInput, elements.modalImageColorToleranceNumber, applyColorTolerance);
+
+  const applyColorSamples = (value) => {
+    state.importSettings.imageColorSamples = Math.max(1, Math.round(Number(value) || 1));
+    handleImageTraceSettingChange("Updated image color samples");
+  };
+  bindPairedControl(elements.imageColorSamplesInput, elements.imageColorSamplesNumber, applyColorSamples);
+  bindPairedControl(elements.modalImageColorSamplesInput, elements.modalImageColorSamplesNumber, applyColorSamples);
+
+  const applyMinRegionArea = (value) => {
+    state.importSettings.imageMinRegionArea = Math.max(0, Number(value) || 0);
+    handleImageTraceSettingChange("Updated minimum region area");
+  };
+  bindPairedControl(elements.imageMinRegionAreaInput, elements.imageMinRegionAreaNumber, applyMinRegionArea);
+  bindPairedControl(elements.modalImageMinRegionAreaInput, elements.modalImageMinRegionAreaNumber, applyMinRegionArea);
+
+  const applyCornerSmoothing = (value) => {
+    state.importSettings.imageCornerSmoothing = Math.max(0, Math.round(Number(value) || 0));
+    handleImageTraceSettingChange("Updated corner smoothing");
+  };
+  bindPairedControl(elements.imageCornerSmoothingInput, elements.imageCornerSmoothingNumber, applyCornerSmoothing);
+  bindPairedControl(elements.modalImageCornerSmoothingInput, elements.modalImageCornerSmoothingNumber, applyCornerSmoothing);
+
+  const applyPathSimplification = (value) => {
+    state.importSettings.imagePathSimplification = Math.max(0, Number(value) || 0);
+    handleImageTraceSettingChange("Updated path simplification");
+  };
+  bindPairedControl(elements.imagePathSimplificationInput, elements.imagePathSimplificationNumber, applyPathSimplification);
+  bindPairedControl(
+    elements.modalImagePathSimplificationInput,
+    elements.modalImagePathSimplificationNumber,
+    applyPathSimplification,
+  );
+
+  const applyInvertImage = (checked) => {
+    state.importSettings.invertImage = checked;
+    handleImageTraceSettingChange("Updated image trace");
+  };
   elements.invertImageInput.addEventListener("change", (event) => {
-    state.importSettings.invertImage = event.target.checked;
-    if (state.meta.pendingImportFile && state.meta.pendingImportKind === "image") {
-      state.ui.status = `Updated image trace settings for ${state.meta.pendingImportFile.name}. Click Import Selected File.`;
-      syncStatus();
-      syncImageTraceStatus();
-      return;
-    }
-    if (state.meta.importedFile && state.meta.importKind === "image") {
-      queueImageRetrace("Updated image trace");
-      return;
-    }
-    syncView();
+    applyInvertImage(event.target.checked);
   });
-  elements.imageTargetRegionsInput.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") {
-      return;
-    }
-    event.preventDefault();
-    state.importSettings.imageTargetRegions = Math.max(0, Math.round(Number(event.target.value) || 0));
-    if (state.meta.pendingImportFile && state.meta.pendingImportKind === "image") {
-      state.ui.status = `Updated image trace settings for ${state.meta.pendingImportFile.name}. Click Import Selected File.`;
-      syncStatus();
-      syncImageTraceStatus();
-      syncView();
-      return;
-    }
-    if (state.meta.importedFile && state.meta.importKind === "image") {
-      queueImageRetrace("Updated target regions");
-      syncView();
-      return;
-    }
-    syncView();
-  });
-  elements.imageTargetRegionsInput.addEventListener("blur", () => {
-    elements.imageTargetRegionsInput.value = String(state.importSettings.imageTargetRegions);
+  elements.modalInvertImageInput.addEventListener("change", (event) => {
+    applyInvertImage(event.target.checked);
   });
   elements.retraceImageButton.addEventListener("click", () => {
     if (!state.meta.importedFile || state.meta.importKind !== "image") {
       return;
     }
     refreshImportedProfile("Retraced image");
+  });
+  elements.modalRetraceImageButton.addEventListener("click", () => {
+    if (!state.meta.importedFile || state.meta.importKind !== "image") {
+      return;
+    }
+    refreshImportedProfile("Retraced image");
+  });
+  elements.applyTraceRegionsButton.addEventListener("click", () => {
+    if (!state.meta.imageTraceCandidates?.length) {
+      return;
+    }
+    applyImageTraceSelection(state.meta.imageTraceDraftSelection);
+    state.ui.status = "Applied trace region changes.";
+    syncView();
   });
   bindPairedControl(elements.svgSamplesInput, elements.svgSamplesNumber, (value) => {
     state.importSettings.curveSamples = Number(value);
@@ -2140,6 +2906,12 @@ function wireEvents() {
   bindPairedControl(elements.edgeFadeInput, elements.edgeFadeNumber, (value) => {
     updateSurfaceSetting("edgeFade", Number(value));
   }, (value) => Number(value).toFixed(2));
+  elements.edgeFadeAllInput.addEventListener("change", (event) => {
+    updateSurfaceSetting("edgeFadeAll", event.target.checked);
+  });
+  elements.showSurfaceResolutionInput.addEventListener("change", (event) => {
+    updateSurfaceSetting("showResolutionEdges", event.target.checked);
+  });
   elements.woodToggleInput.addEventListener("change", (event) => {
     updateSurfaceSetting("woodEnabled", event.target.checked);
   });
@@ -2149,18 +2921,27 @@ function wireEvents() {
   bindPairedControl(elements.grainScaleInput, elements.grainScaleNumber, (value) => {
     updateSurfaceSetting("grainScale", Number(value));
   }, (value) => Number(value).toFixed(2));
+  elements.grainAxisXButton.addEventListener("click", () => {
+    updateSurfaceSetting("grainAxis", "x");
+  });
+  elements.grainAxisYButton.addEventListener("click", () => {
+    updateSurfaceSetting("grainAxis", "y");
+  });
+  elements.grainAxisZButton.addEventListener("click", () => {
+    updateSurfaceSetting("grainAxis", "z");
+  });
 
   elements.addPointSourceButton.addEventListener("click", () => {
     state.ui.placementMode = "point";
-    state.ui.pendingCurveStart = null;
+    state.ui.pendingCurvePoints = [];
     state.ui.status = "Placing a new point source.";
     syncStatus();
   });
 
   elements.addCurveSourceButton.addEventListener("click", () => {
     state.ui.placementMode = "curve";
-    state.ui.pendingCurveStart = null;
-    state.ui.status = "Placing a new curve source.";
+    state.ui.pendingCurvePoints = [];
+    state.ui.status = "Placing a new spline curve source.";
     syncStatus();
   });
 
@@ -2196,11 +2977,38 @@ function wireEvents() {
     syncCanvasSizes();
     clampFloatingProfileCard();
   });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.ui.imagePreviewModalOpen) {
+      setImagePreviewModalOpen(false);
+      return;
+    }
+    const activeTag = document.activeElement?.tagName?.toLowerCase();
+    if (["input", "select", "textarea", "button"].includes(activeTag)) {
+      return;
+    }
+    if (event.key === "Enter") {
+      finalizePendingCurveSource();
+      return;
+    }
+    if (event.key === "Escape" && state.ui.placementMode === "curve") {
+      state.ui.pendingCurvePoints = [];
+      state.ui.placementMode = null;
+      state.ui.status = "Cancelled curve source placement.";
+      syncView();
+    }
+  });
 }
 
 populateSpeciesSelects();
+state.ui.theme = getPreferredTheme();
 initThree();
 initFloatingProfileCard();
+initCollapsiblePanels();
 wireEvents();
+systemThemeMedia.addEventListener("change", () => {
+  if (state.ui.followSystemTheme) {
+    syncView();
+  }
+});
 syncView();
 resetSurfaceView();

@@ -189,11 +189,54 @@ export function smoothstep(edge0, edge1, value) {
   return t * t * (3 - 2 * t);
 }
 
+function sampleCatmullRomPoint(points, segmentIndex, t) {
+  const p0 = points[Math.max(0, segmentIndex - 1)];
+  const p1 = points[segmentIndex];
+  const p2 = points[Math.min(points.length - 1, segmentIndex + 1)];
+  const p3 = points[Math.min(points.length - 1, segmentIndex + 2)];
+  const t2 = t * t;
+  const t3 = t2 * t;
+
+  return {
+    x:
+      0.5 *
+      ((2 * p1.x) +
+        (-p0.x + p2.x) * t +
+        (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+        (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+    y:
+      0.5 *
+      ((2 * p1.y) +
+        (-p0.y + p2.y) * t +
+        (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+        (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+  };
+}
+
+export function sampleCurveSourcePolyline(points, sampleCount = 48) {
+  if (points.length <= 2) {
+    return points.slice();
+  }
+
+  const segmentCount = points.length - 1;
+  const stepsPerSegment = Math.max(6, Math.round(sampleCount / segmentCount));
+  const samples = [points[0]];
+
+  for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+    for (let step = 1; step <= stepsPerSegment; step += 1) {
+      const t = step / stepsPerSegment;
+      samples.push(sampleCatmullRomPoint(points, segmentIndex, t));
+    }
+  }
+
+  return samples;
+}
+
 function sampleSourceValue(source, point) {
   const distance =
     source.type === "point"
       ? Math.hypot(point.x - source.points[0].x, point.y - source.points[0].y)
-      : distanceToPolyline(point, source.points);
+      : distanceToPolyline(point, sampleCurveSourcePolyline(source.points), false);
 
   const phase = distance * source.frequency * Math.PI * 2 + source.phase;
   const rawWave = Math.sin(phase) * source.amplitude;
@@ -225,8 +268,22 @@ function getAdditiveSurfaceLoops(state) {
   return state.loops.filter((loop) => loop.role === "outer" || loop.surfaceMode === "add");
 }
 
+function getExteriorAdditiveSurfaceLoops(state) {
+  return state.loops.filter(
+    (loop) => loop.role === "outer" || (loop.surfaceMode === "add" && loop.role !== "inner"),
+  );
+}
+
 function getSubtractiveSurfaceLoops(state) {
   return state.loops.filter((loop) => loop.surfaceMode === "subtract");
+}
+
+function getInteriorBreakLoops(state) {
+  return state.loops.filter((loop) => loop.role === "inner");
+}
+
+function pointInsideAdditiveSurface(state, point) {
+  return getExteriorAdditiveSurfaceLoops(state).some((loop) => pointInPolygon(point, loop.points));
 }
 
 function pointInsideSurface(state, point) {
@@ -247,7 +304,21 @@ function distanceToSurfaceBoundary(state, point) {
   const boundaryDistances = [
     ...getAdditiveSurfaceLoops(state),
     ...getSubtractiveSurfaceLoops(state),
+    ...getInteriorBreakLoops(state),
   ].map((loop) => distanceToPolyline(point, loop.points, true));
+
+  return boundaryDistances.length ? Math.min(...boundaryDistances) : 0;
+}
+
+function distanceToExteriorBoundary(state, point) {
+  const exteriorLoops = [
+    ...getExteriorAdditiveSurfaceLoops(state),
+    ...getSubtractiveSurfaceLoops(state).filter(
+      (loop) => !loop.points.every((candidatePoint) => pointInsideAdditiveSurface(state, candidatePoint)),
+    ),
+  ];
+  const boundaryDistances = exteriorLoops
+    .map((loop) => distanceToPolyline(point, loop.points, true));
 
   return boundaryDistances.length ? Math.min(...boundaryDistances) : 0;
 }
@@ -262,7 +333,9 @@ export function sampleHeight(state, point) {
     accumulated = combineValues(accumulated, sampleSourceValue(source, point), source.operation);
   });
 
-  const edgeDistance = distanceToSurfaceBoundary(state, point);
+  const edgeDistance = state.surface.edgeFadeAll
+    ? distanceToSurfaceBoundary(state, point)
+    : distanceToExteriorBoundary(state, point);
   const edgeMask =
     state.surface.edgeFade > 0
       ? smoothstep(0, state.surface.edgeFade, edgeDistance)

@@ -20,8 +20,16 @@
   <body>
     <div class="app-shell">
       <aside class="sidebar">
+        <section class="panel theme-panel">
+          <div class="panel-heading">
+            <h2>Theme</h2>
+            <div class="segmented-control theme-toggle" aria-label="Theme">
+              <button id="themeLightButton" class="ghost-button is-active" type="button">Light</button>
+              <button id="themeDarkButton" class="ghost-button" type="button">Dark</button>
+            </div>
+          </div>
+        </section>
         <header class="hero">
-          <p class="eyebrow">V1 Surface Study</p>
           <h1>Wavythought Generator</h1>
           <p class="hero-copy">
             Import a closed 2D profile, place wave emitters, and preview a
@@ -35,10 +43,14 @@
             <button id="loadSampleButton" class="ghost-button">Load Sample</button>
           </div>
 
-          <label class="control">
+          <div class="control">
             <span>Import SVG, DXF, or image</span>
-            <input id="profileFileInput" type="file" accept=".svg,.dxf,.png,.jpg,.jpeg,.webp,.bmp" />
-          </label>
+            <label id="profileDropZone" class="file-drop-zone" for="profileFileInput">
+              <input id="profileFileInput" type="file" accept=".svg,.dxf,.png,.jpg,.jpeg,.webp,.bmp" />
+              <span id="profileDropZoneLabel" class="file-drop-zone-label">Choose file or drag it here</span>
+              <span class="file-drop-zone-hint">SVG, DXF, PNG, JPG, WEBP, BMP</span>
+            </label>
+          </div>
 
           <div class="button-row">
             <button id="importProfileButton" class="ghost-button" type="button">Import Selected File</button>
@@ -46,10 +58,58 @@
 
           <div id="imageImportOptions" class="control-grid">
             <label class="control">
+              <span>Image import method</span>
+              <div class="segmented-control">
+                <button id="imageImportModeThresholdButton" class="ghost-button is-active" type="button">Threshold</button>
+                <button id="imageImportModeSegmentationButton" class="ghost-button" type="button">Color Regions</button>
+              </div>
+            </label>
+
+            <label id="thresholdMethodSettings" class="control">
               <span>Image threshold</span>
               <div class="value-control">
                 <input id="imageThresholdInput" type="range" min="16" max="240" value="140" />
                 <input id="imageThresholdNumber" type="number" min="16" max="240" step="1" value="140" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Color samples</span>
+              <div class="value-control">
+                <input id="imageColorSamplesInput" type="range" min="1" max="24" value="8" />
+                <input id="imageColorSamplesNumber" type="number" min="1" max="24" step="1" value="8" />
+              </div>
+            </label>
+
+            <label id="segmentationMethodSettings" class="control is-hidden">
+              <span>Color merge tolerance</span>
+              <div class="value-control">
+                <input id="imageColorToleranceInput" type="range" min="0" max="96" step="1" value="24" />
+                <input id="imageColorToleranceNumber" type="number" min="0" max="96" step="1" value="24" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Min region area (%)</span>
+              <div class="value-control">
+                <input id="imageMinRegionAreaInput" type="range" min="0" max="5" step="0.01" value="0.12" />
+                <input id="imageMinRegionAreaNumber" type="number" min="0" max="5" step="0.01" value="0.12" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Corner smoothing</span>
+              <div class="value-control">
+                <input id="imageCornerSmoothingInput" type="range" min="0" max="6" step="1" value="1" />
+                <input id="imageCornerSmoothingNumber" type="number" min="0" max="6" step="1" value="1" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Path simplification</span>
+              <div class="value-control">
+                <input id="imagePathSimplificationInput" type="range" min="0" max="4" step="0.05" value="0.6" />
+                <input id="imagePathSimplificationNumber" type="number" min="0" max="4" step="0.05" value="0.6" />
               </div>
             </label>
 
@@ -58,14 +118,24 @@
               <span>Invert image trace</span>
             </label>
 
-            <label class="control">
-              <span>Target regions</span>
-              <input id="imageTargetRegionsInput" type="number" min="0" step="1" value="0" />
-            </label>
-
             <div class="button-row">
               <button id="retraceImageButton" class="ghost-button" type="button">Retrace Image</button>
             </div>
+
+            <div class="trace-preview-grid">
+              <figure id="imageColorPreviewCard" class="trace-preview-card trace-preview-trigger">
+                <figcaption id="imagePreviewPrimaryLabel">Color sample preview</figcaption>
+                <canvas id="imageColorPreviewCanvas" width="128" height="96"></canvas>
+              </figure>
+              <figure id="imageThresholdPreviewCard" class="trace-preview-card trace-preview-trigger">
+                <figcaption id="imagePreviewSecondaryLabel">Threshold mask</figcaption>
+                <canvas id="imageThresholdPreviewCanvas" width="128" height="96"></canvas>
+              </figure>
+            </div>
+
+            <p id="imagePreviewStatus" class="status-text">
+              Preview appears here for image imports.
+            </p>
 
             <p id="imageTraceStatus" class="status-text">
               Adjust image trace settings, then retrace.
@@ -112,6 +182,7 @@
           <div id="imageTracePanel" class="control-grid is-hidden">
             <div class="panel-heading compact-heading">
               <h3>Trace Regions</h3>
+              <button id="applyTraceRegionsButton" class="ghost-button" type="button">Apply Regions</button>
             </div>
             <p class="status-text">
               The largest traced region drives the surface. Set each other region to add, subtract, or ignore.
@@ -138,6 +209,11 @@
               </div>
             </label>
 
+            <label class="control checkbox-control inline-toggle-control">
+              <input id="showSurfaceResolutionInput" type="checkbox" />
+              <span>Show surface mesh edges</span>
+            </label>
+
             <label class="control">
               <span>Height scale</span>
               <div class="value-control">
@@ -153,6 +229,12 @@
                 <input id="edgeFadeNumber" type="number" min="0" max="40" step="0.5" value="12" />
               </div>
             </label>
+
+            <label class="control checkbox-control">
+              <input id="edgeFadeAllInput" type="checkbox" />
+              <span>Fade from all edges</span>
+            </label>
+
           </div>
         </section>
 
@@ -204,6 +286,15 @@
               <div class="value-control">
                 <input id="grainScaleInput" type="range" min="0.5" max="4" step="0.1" value="1.5" />
                 <input id="grainScaleNumber" type="number" min="0.5" max="4" step="0.1" value="1.5" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Grain axis</span>
+              <div class="segmented-control">
+                <button id="grainAxisXButton" class="ghost-button" type="button">X</button>
+                <button id="grainAxisYButton" class="ghost-button" type="button">Y</button>
+                <button id="grainAxisZButton" class="ghost-button is-active" type="button">Z</button>
               </div>
             </label>
           </div>
@@ -261,6 +352,101 @@
     </div>
 
     <svg id="svgMeasureRoot" class="hidden-measure"></svg>
+    <div id="imagePreviewModal" class="modal-overlay is-hidden" aria-hidden="true">
+      <div class="modal-panel">
+        <div class="panel-heading">
+          <h2>Image Trace Preview</h2>
+          <button id="closeImagePreviewModalButton" class="ghost-button" type="button">Close</button>
+        </div>
+
+        <div class="modal-grid">
+          <div class="trace-preview-grid modal-trace-preview-grid">
+            <figure class="trace-preview-card modal-trace-preview-card">
+              <figcaption id="modalImagePreviewPrimaryLabel">Color sample preview</figcaption>
+              <canvas id="modalImageColorPreviewCanvas" width="512" height="384"></canvas>
+            </figure>
+            <figure class="trace-preview-card modal-trace-preview-card">
+              <figcaption id="modalImagePreviewSecondaryLabel">Threshold mask</figcaption>
+              <canvas id="modalImageThresholdPreviewCanvas" width="512" height="384"></canvas>
+            </figure>
+          </div>
+
+          <div class="modal-settings-column">
+            <div class="control">
+              <span>Image import method</span>
+              <div class="segmented-control">
+                <button id="modalImageImportModeThresholdButton" class="ghost-button is-active" type="button">Threshold</button>
+                <button id="modalImageImportModeSegmentationButton" class="ghost-button" type="button">Color Regions</button>
+              </div>
+            </div>
+
+            <div id="modalThresholdMethodSettings" class="control-grid">
+              <label class="control">
+                <span>Image threshold</span>
+                <div class="value-control">
+                  <input id="modalImageThresholdInput" type="range" min="0" max="255" step="1" value="140" />
+                  <input id="modalImageThresholdNumber" type="number" min="0" max="255" step="1" value="140" />
+                </div>
+              </label>
+            </div>
+
+            <div id="modalSegmentationMethodSettings" class="control-grid is-hidden">
+              <label class="control">
+                <span>Color merge tolerance</span>
+                <div class="value-control">
+                  <input id="modalImageColorToleranceInput" type="range" min="0" max="96" step="1" value="24" />
+                  <input id="modalImageColorToleranceNumber" type="number" min="0" max="96" step="1" value="24" />
+                </div>
+              </label>
+            </div>
+
+            <label class="control">
+              <span>Color samples</span>
+              <div class="value-control">
+                <input id="modalImageColorSamplesInput" type="range" min="2" max="24" step="1" value="8" />
+                <input id="modalImageColorSamplesNumber" type="number" min="2" max="24" step="1" value="8" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Min region area (%)</span>
+              <div class="value-control">
+                <input id="modalImageMinRegionAreaInput" type="range" min="0" max="10" step="0.01" value="0.12" />
+                <input id="modalImageMinRegionAreaNumber" type="number" min="0" max="10" step="0.01" value="0.12" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Corner smoothing</span>
+              <div class="value-control">
+                <input id="modalImageCornerSmoothingInput" type="range" min="0" max="8" step="1" value="1" />
+                <input id="modalImageCornerSmoothingNumber" type="number" min="0" max="8" step="1" value="1" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Path simplification</span>
+              <div class="value-control">
+                <input id="modalImagePathSimplificationInput" type="range" min="0" max="4" step="0.05" value="0.6" />
+                <input id="modalImagePathSimplificationNumber" type="number" min="0" max="4" step="0.05" value="0.6" />
+              </div>
+            </label>
+
+            <label class="control checkbox-control">
+              <input id="modalInvertImageInput" type="checkbox" />
+              <span>Invert image trace</span>
+            </label>
+
+            <div class="button-row">
+              <button id="modalRetraceImageButton" class="ghost-button" type="button">Retrace Image</button>
+            </div>
+
+            <p id="modalImagePreviewStatus" class="status-text">Preview appears here for image imports.</p>
+            <p id="modalImageTraceStatus" class="status-text">Adjust image trace settings, then retrace.</p>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>

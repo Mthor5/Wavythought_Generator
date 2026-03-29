@@ -159,6 +159,177 @@ function resampleLoops(loops, sampleCount) {
   return loops.map((loop) => resampleClosedLoop(loop, sampleCount));
 }
 
+function getLoopFrame(loop) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  loop.forEach((point) => {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  });
+
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    width: Math.max(maxX - minX, CLOSE_DISTANCE_EPSILON),
+    height: Math.max(maxY - minY, CLOSE_DISTANCE_EPSILON),
+    cx: (minX + maxX) * 0.5,
+    cy: (minY + maxY) * 0.5,
+  };
+}
+
+function getAverageLoopDistance(left, right) {
+  let totalDistance = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    totalDistance += distanceBetween(left[index], right[index]);
+  }
+  return totalDistance / Math.max(left.length, 1);
+}
+
+function getBestAlignedLoopDistance(leftLoop, rightLoop) {
+  const sampleCount = 36;
+  const left = resampleClosedLoop(leftLoop, sampleCount);
+  const right = resampleClosedLoop(rightLoop, sampleCount);
+  const reversed = right.slice().reverse();
+  let best = Infinity;
+
+  for (let offset = 0; offset < sampleCount; offset += 1) {
+    const shifted = right.map((_, index) => right[(index + offset) % sampleCount]);
+    const shiftedReversed = reversed.map((_, index) => reversed[(index + offset) % sampleCount]);
+    best = Math.min(
+      best,
+      getAverageLoopDistance(left, shifted),
+      getAverageLoopDistance(left, shiftedReversed),
+    );
+  }
+
+  return best;
+}
+
+function dedupeLoopsWithinTolerance(loops, tolerance) {
+  const unique = [];
+
+  loops.forEach((loop) => {
+    const loopFrame = getLoopFrame(loop);
+    const loopArea = Math.abs(polygonArea(loop));
+    const duplicate = unique.some((candidate) => {
+      const candidateFrame = getLoopFrame(candidate);
+      const candidateArea = Math.abs(polygonArea(candidate));
+      const centroidDistance = Math.hypot(loopFrame.cx - candidateFrame.cx, loopFrame.cy - candidateFrame.cy);
+      const sizeDelta = Math.max(
+        Math.abs(loopFrame.width - candidateFrame.width),
+        Math.abs(loopFrame.height - candidateFrame.height),
+      );
+      const areaDeltaRatio =
+        Math.abs(loopArea - candidateArea) / Math.max(loopArea, candidateArea, CLOSE_DISTANCE_EPSILON);
+
+      if (centroidDistance > tolerance || sizeDelta > tolerance || areaDeltaRatio > 0.08) {
+        return false;
+      }
+
+      return getBestAlignedLoopDistance(loop, candidate) <= tolerance;
+    });
+
+    if (!duplicate) {
+      unique.push(loop);
+    }
+  });
+
+  return unique;
+}
+
+function smoothClosedLoop(points, iterations) {
+  let current = points.map((point) => ({ ...point }));
+  const passCount = Math.max(0, Math.round(Number(iterations) || 0));
+
+  for (let pass = 0; pass < passCount; pass += 1) {
+    if (current.length < 3) {
+      return current;
+    }
+
+    current = current.map((point, index) => {
+      const previous = current[(index - 1 + current.length) % current.length];
+      const next = current[(index + 1) % current.length];
+      return {
+        x: previous.x * 0.25 + point.x * 0.5 + next.x * 0.25,
+        y: previous.y * 0.25 + point.y * 0.5 + next.y * 0.25,
+      };
+    });
+  }
+
+  return current;
+}
+
+function distanceToLine(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= CLOSE_DISTANCE_EPSILON) {
+    return distanceBetween(point, start);
+  }
+
+  const area = Math.abs(dx * (start.y - point.y) - (start.x - point.x) * dy);
+  return area / Math.sqrt(lengthSquared);
+}
+
+function simplifyOpenPolyline(points, tolerance) {
+  if (points.length <= 2 || tolerance <= 0) {
+    return points.slice();
+  }
+
+  let maxDistance = 0;
+  let splitIndex = -1;
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const distance = distanceToLine(points[index], points[0], points[points.length - 1]);
+    if (distance > maxDistance) {
+      maxDistance = distance;
+      splitIndex = index;
+    }
+  }
+
+  if (maxDistance <= tolerance || splitIndex === -1) {
+    return [points[0], points[points.length - 1]];
+  }
+
+  const left = simplifyOpenPolyline(points.slice(0, splitIndex + 1), tolerance);
+  const right = simplifyOpenPolyline(points.slice(splitIndex), tolerance);
+  return left.slice(0, -1).concat(right);
+}
+
+function simplifyClosedLoop(points, tolerance) {
+  if (points.length <= 3 || tolerance <= 0) {
+    return points.slice();
+  }
+
+  const centroid = points.reduce(
+    (accumulator, point) => ({
+      x: accumulator.x + point.x / points.length,
+      y: accumulator.y + point.y / points.length,
+    }),
+    { x: 0, y: 0 },
+  );
+  let anchorIndex = 0;
+  let bestDistance = -Infinity;
+  points.forEach((point, index) => {
+    const distance = distanceBetween(point, centroid);
+    if (distance > bestDistance) {
+      bestDistance = distance;
+      anchorIndex = index;
+    }
+  });
+
+  const rotated = points.slice(anchorIndex).concat(points.slice(0, anchorIndex));
+  const opened = rotated.concat([{ ...rotated[0] }]);
+  const simplified = simplifyOpenPolyline(opened, tolerance).slice(0, -1);
+  return simplified.length >= 3 ? simplified : points.slice();
+}
+
 function getSvgLoops(text, sampleCount) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(text, "image/svg+xml");
@@ -297,19 +468,96 @@ function buildDxfEllipse(entityPairs, sampleCount = 96) {
   return maybeClosedLoop(points, Math.abs(end - start) >= Math.PI * 1.99);
 }
 
-function buildDxfSpline(entityPairs) {
+function buildDxfSpline(entityPairs, sampleCount = 96) {
   const xs = getAllValues(entityPairs, "10").map((value) => numberValue(value));
   const ys = getAllValues(entityPairs, "20").map((value) => numberValue(value));
+  const fitXs = getAllValues(entityPairs, "11").map((value) => numberValue(value));
+  const fitYs = getAllValues(entityPairs, "21").map((value) => numberValue(value));
+  const knots = getAllValues(entityPairs, "40").map((value) => numberValue(value));
+  const weights = getAllValues(entityPairs, "41").map((value) => numberValue(value, 1));
+  const degree = Math.max(1, Math.round(numberValue(getFirstValue(entityPairs, "71"), 3)));
   const flags = numberValue(getFirstValue(entityPairs, "70"), 0);
   const explicitClosed = (flags & 1) === 1;
-  const count = Math.min(xs.length, ys.length);
-  const points = [];
+  const periodic = (flags & 2) === 2;
+  const controlCount = Math.min(xs.length, ys.length);
+  const fitCount = Math.min(fitXs.length, fitYs.length);
+  const controlPoints = [];
 
-  for (let index = 0; index < count; index += 1) {
-    points.push({ x: xs[index], y: ys[index] });
+  for (let index = 0; index < controlCount; index += 1) {
+    controlPoints.push({ x: xs[index], y: ys[index], w: weights[index] ?? 1 });
   }
 
-  return maybeClosedLoop(points, explicitClosed);
+  if (controlPoints.length >= degree + 1 && knots.length >= controlPoints.length + degree + 1) {
+    const basis = (controlIndex, basisDegree, parameter) => {
+      if (basisDegree === 0) {
+        const start = knots[controlIndex];
+        const end = knots[controlIndex + 1];
+        const isLastSpan =
+          parameter === knots[knots.length - 1] &&
+          controlIndex === controlPoints.length - 1 &&
+          parameter >= start &&
+          parameter <= end;
+        return (parameter >= start && parameter < end) || isLastSpan ? 1 : 0;
+      }
+
+      const leftDenominator = knots[controlIndex + basisDegree] - knots[controlIndex];
+      const rightDenominator = knots[controlIndex + basisDegree + 1] - knots[controlIndex + 1];
+      const leftTerm =
+        leftDenominator <= CLOSE_DISTANCE_EPSILON
+          ? 0
+          : ((parameter - knots[controlIndex]) / leftDenominator) * basis(controlIndex, basisDegree - 1, parameter);
+      const rightTerm =
+        rightDenominator <= CLOSE_DISTANCE_EPSILON
+          ? 0
+          : ((knots[controlIndex + basisDegree + 1] - parameter) / rightDenominator) *
+            basis(controlIndex + 1, basisDegree - 1, parameter);
+      return leftTerm + rightTerm;
+    };
+
+    const startParameter = knots[degree];
+    const endParameter = knots[knots.length - degree - 1];
+    if (endParameter - startParameter > CLOSE_DISTANCE_EPSILON) {
+      const points = [];
+      const sampleSteps = Math.max(48, sampleCount);
+      for (let step = 0; step < sampleSteps; step += 1) {
+        const t = step / sampleSteps;
+        const parameter = startParameter + (endParameter - startParameter) * t;
+        let numeratorX = 0;
+        let numeratorY = 0;
+        let denominator = 0;
+
+        for (let controlIndex = 0; controlIndex < controlPoints.length; controlIndex += 1) {
+          const basisValue = basis(controlIndex, degree, parameter) * controlPoints[controlIndex].w;
+          numeratorX += basisValue * controlPoints[controlIndex].x;
+          numeratorY += basisValue * controlPoints[controlIndex].y;
+          denominator += basisValue;
+        }
+
+        if (Math.abs(denominator) > CLOSE_DISTANCE_EPSILON) {
+          points.push({
+            x: numeratorX / denominator,
+            y: numeratorY / denominator,
+          });
+        }
+      }
+
+      return maybeClosedLoop(points, explicitClosed || periodic);
+    }
+  }
+
+  const fitPoints = [];
+  for (let index = 0; index < fitCount; index += 1) {
+    fitPoints.push({ x: fitXs[index], y: fitYs[index] });
+  }
+
+  if (fitPoints.length >= 3) {
+    return maybeClosedLoop(fitPoints, explicitClosed || periodic);
+  }
+
+  return maybeClosedLoop(
+    controlPoints.map((point) => ({ x: point.x, y: point.y })),
+    explicitClosed || periodic,
+  );
 }
 
 function getDxfLoops(text, sampleCount) {
@@ -403,7 +651,7 @@ function getDxfLoops(text, sampleCount) {
 
     if (pair.code === "0" && pair.value === "SPLINE") {
       const { entityPairs, nextIndex } = collectEntityPairs(pairs, index);
-      const spline = buildDxfSpline(entityPairs);
+      const spline = buildDxfSpline(entityPairs, sampleCount);
       if (spline) {
         loops.push(spline);
       }
@@ -422,17 +670,196 @@ function getDxfLoops(text, sampleCount) {
   };
 }
 
-function buildMask(imageData, threshold, invert) {
+function buildPalette(imageData, maxColors) {
+  const { data, width, height } = imageData;
+  const paletteLimit = Math.max(1, Math.round(Number(maxColors) || 8));
+  const bins = new Map();
+
+  for (let index = 0; index < width * height; index += 1) {
+    const offset = index * 4;
+    const alpha = data[offset + 3];
+    if (alpha <= 24) {
+      continue;
+    }
+
+    const red = data[offset] >> 3;
+    const green = data[offset + 1] >> 3;
+    const blue = data[offset + 2] >> 3;
+    const key = `${red},${green},${blue}`;
+    const current = bins.get(key) || { count: 0, red: 0, green: 0, blue: 0 };
+    current.count += 1;
+    current.red += data[offset];
+    current.green += data[offset + 1];
+    current.blue += data[offset + 2];
+    bins.set(key, current);
+  }
+
+  const palette = [...bins.values()]
+    .sort((left, right) => right.count - left.count)
+    .slice(0, paletteLimit)
+    .map((entry) => ({
+      r: Math.round(entry.red / entry.count),
+      g: Math.round(entry.green / entry.count),
+      b: Math.round(entry.blue / entry.count),
+    }));
+
+  return palette.length ? palette : [{ r: 0, g: 0, b: 0 }];
+}
+
+function findNearestPaletteColor(red, green, blue, palette) {
+  let best = palette[0];
+  let bestIndex = 0;
+  let bestDistance = Infinity;
+
+  palette.forEach((candidate, index) => {
+    const distance =
+      (candidate.r - red) * (candidate.r - red) +
+      (candidate.g - green) * (candidate.g - green) +
+      (candidate.b - blue) * (candidate.b - blue);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestIndex = index;
+      bestDistance = distance;
+    }
+  });
+
+  return { color: best, index: bestIndex };
+}
+
+function quantizeImageData(imageData, colorSamples) {
+  const { data, width, height } = imageData;
+  const quantizedData = new Uint8ClampedArray(data.length);
+  const palette = buildPalette(imageData, colorSamples);
+  const colorIndexMap = new Int16Array(width * height).fill(-1);
+  const usedColors = new Set();
+
+  for (let index = 0; index < width * height; index += 1) {
+    const offset = index * 4;
+    const alpha = data[offset + 3];
+    quantizedData[offset + 3] = alpha;
+
+    if (alpha <= 24) {
+      continue;
+    }
+
+    const nearest = findNearestPaletteColor(data[offset], data[offset + 1], data[offset + 2], palette);
+    quantizedData[offset] = nearest.color.r;
+    quantizedData[offset + 1] = nearest.color.g;
+    quantizedData[offset + 2] = nearest.color.b;
+    colorIndexMap[index] = nearest.index;
+    usedColors.add(`${nearest.color.r},${nearest.color.g},${nearest.color.b}`);
+  }
+
+  return {
+    quantizedData,
+    colorIndexMap,
+    palette,
+    sampledColorCount: usedColors.size,
+    targetColorCount: Math.max(1, Math.round(Number(colorSamples) || 8)),
+  };
+}
+
+function buildRgbaPreview(width, height, colorProvider) {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let index = 0; index < width * height; index += 1) {
+    const offset = index * 4;
+    const color = colorProvider(index);
+    rgba[offset] = color.r;
+    rgba[offset + 1] = color.g;
+    rgba[offset + 2] = color.b;
+    rgba[offset + 3] = color.a ?? 255;
+  }
+  return rgba;
+}
+
+function buildThresholdMaskFromQuantized(imageData, quantizedData, threshold, invert) {
   const { data, width, height } = imageData;
   const mask = new Uint8Array(width * height);
   for (let index = 0; index < width * height; index += 1) {
     const offset = index * 4;
     const alpha = data[offset + 3];
-    const luminance = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
+    const luminance =
+      quantizedData[offset] * 0.299 + quantizedData[offset + 1] * 0.587 + quantizedData[offset + 2] * 0.114;
     const solid = alpha > 24 && (invert ? luminance > threshold : luminance < threshold);
     mask[index] = solid ? 1 : 0;
   }
   return { mask, width, height };
+}
+
+function buildMask(imageData, threshold, invert, colorSamples = 8) {
+  const { quantizedData, colorIndexMap, palette, sampledColorCount, targetColorCount } = quantizeImageData(
+    imageData,
+    colorSamples,
+  );
+  const { mask, width, height } = buildThresholdMaskFromQuantized(imageData, quantizedData, threshold, invert);
+  return { mask, width, height, quantizedData, colorIndexMap, palette, sampledColorCount, targetColorCount };
+}
+
+function buildMergedPaletteGroups(palette, tolerance) {
+  const groups = [];
+  const toleranceSquared = tolerance * tolerance;
+
+  palette.forEach((color, paletteIndex) => {
+    const group = groups.find((candidate) => {
+      const dr = candidate.r - color.r;
+      const dg = candidate.g - color.g;
+      const db = candidate.b - color.b;
+      return dr * dr + dg * dg + db * db <= toleranceSquared;
+    });
+
+    if (group) {
+      group.members.push(paletteIndex);
+      group.r = (group.r * (group.members.length - 1) + color.r) / group.members.length;
+      group.g = (group.g * (group.members.length - 1) + color.g) / group.members.length;
+      group.b = (group.b * (group.members.length - 1) + color.b) / group.members.length;
+      return;
+    }
+
+    groups.push({ members: [paletteIndex], r: color.r, g: color.g, b: color.b });
+  });
+
+  return groups.map((group) => ({
+    members: group.members,
+    color: {
+      r: Math.round(group.r),
+      g: Math.round(group.g),
+      b: Math.round(group.b),
+      a: 255,
+    },
+  }));
+}
+
+function buildSegmentationData(imageData, colorSamples, colorTolerance) {
+  const { width, height } = imageData;
+  const quantized = quantizeImageData(imageData, colorSamples);
+  const groups = buildMergedPaletteGroups(quantized.palette, Math.max(0, Number(colorTolerance) || 0));
+  const paletteToGroup = new Int16Array(quantized.palette.length).fill(-1);
+  groups.forEach((group, groupIndex) => {
+    group.members.forEach((paletteIndex) => {
+      paletteToGroup[paletteIndex] = groupIndex;
+    });
+  });
+
+  const groupIndexMap = new Int16Array(width * height).fill(-1);
+  for (let index = 0; index < width * height; index += 1) {
+    const paletteIndex = quantized.colorIndexMap[index];
+    if (paletteIndex >= 0) {
+      groupIndexMap[index] = paletteToGroup[paletteIndex];
+    }
+  }
+
+  const segmentedData = buildRgbaPreview(width, height, (index) => {
+    const groupIndex = groupIndexMap[index];
+    return groupIndex >= 0 ? groups[groupIndex].color : { r: 245, g: 241, b: 234, a: 0 };
+  });
+
+  return {
+    ...quantized,
+    groups,
+    groupIndexMap,
+    segmentedData,
+    mergedColorCount: groups.length,
+  };
 }
 
 function floodLargestComponent(binary) {
@@ -590,8 +1017,41 @@ function chainSegments(segments) {
   return loops;
 }
 
-async function getImageLoops(file, settings) {
-  const image = await loadImage(file);
+function extractImageLoopsFromMask(binary, canvasHeight, minRegionAreaPixels, smoothingIterations, simplificationTolerance) {
+  return chainSegments(marchingSquares(binary))
+    .map((loop) =>
+      loop.map((point) => ({
+        x: point.x,
+        y: canvasHeight - point.y,
+      })),
+    )
+    .map((loop) => smoothClosedLoop(loop, smoothingIterations))
+    .map((loop) => simplifyClosedLoop(loop, simplificationTolerance))
+    .filter((loop) => loop.length >= 3)
+    .filter((loop) => Math.abs(polygonArea(loop)) >= minRegionAreaPixels);
+}
+
+function finalizeImageLoops(loops, duplicateTolerance) {
+  const uniqueLoops = dedupeLoopsWithinTolerance(
+    loops.sort((left, right) => Math.abs(polygonArea(right)) - Math.abs(polygonArea(left))),
+    duplicateTolerance,
+  );
+  const normalizedLoops = normalizeLoops(uniqueLoops);
+  const traceCandidates = normalizedLoops.map((loop, index) => ({
+    id: `trace-${index + 1}`,
+    label: `Region ${index + 1}`,
+    area: Math.abs(polygonArea(loop)),
+    points: loop,
+  }));
+
+  return {
+    loops: normalizedLoops,
+    traceCandidates,
+    sourceBounds: getRawBounds(uniqueLoops),
+  };
+}
+
+function buildImageTraceFromImage(image, settings) {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d", { willReadFrequently: true });
   const longestSide = 256;
@@ -604,33 +1064,92 @@ async function getImageLoops(file, settings) {
     context.getImageData(0, 0, canvas.width, canvas.height),
     settings.imageThreshold,
     settings.invertImage,
+    settings.imageColorSamples,
   );
-  const regionLimit = Math.max(0, Number(settings.imageTargetRegions) || 0);
-  const rawLoops = chainSegments(marchingSquares(binary))
-    .map((loop) =>
-      loop.map((point) => ({
-        x: point.x,
-        y: canvas.height - point.y,
-      })),
-    )
-    .filter((loop) => Math.abs(polygonArea(loop)) >= Math.max(canvas.width * canvas.height * 0.0012, 12))
-    .sort((left, right) => Math.abs(polygonArea(right)) - Math.abs(polygonArea(left)));
-  const limitedLoops = regionLimit > 0 ? rawLoops.slice(0, regionLimit) : rawLoops;
-  const normalizedLoops = normalizeLoops(limitedLoops);
-  const traceCandidates = normalizedLoops.map((loop, index) => ({
-    id: `trace-${index + 1}`,
-    label: `Region ${index + 1}`,
-    area: Math.abs(polygonArea(loop)),
-    points: loop,
-  }));
+  const duplicateTolerance = Math.max(canvas.width, canvas.height) * 0.006;
+  const minRegionAreaPercent = Math.max(0, Number(settings.imageMinRegionArea) || 0);
+  const minRegionAreaPixels = Math.max((canvas.width * canvas.height * minRegionAreaPercent) / 100, 12);
+  const smoothingIterations = Math.max(0, Math.round(Number(settings.imageCornerSmoothing) || 0));
+  const simplificationTolerance = Math.max(0, Number(settings.imagePathSimplification) || 0);
+  let finalized;
+  let primaryPreviewData = binary.quantizedData;
+  let secondaryPreviewData = buildRgbaPreview(binary.width, binary.height, (index) => {
+    const shade = binary.mask[index] ? 32 : 245;
+    return { r: shade, g: shade, b: shade, a: 255 };
+  });
+  let primaryLabel = "Color sample preview";
+  let secondaryLabel = "Threshold mask";
+  let previewMode = "threshold";
+  let tracedColorCount = binary.sampledColorCount;
+
+  if (settings.imageImportMode === "segmentation") {
+    const segmentation = buildSegmentationData(
+      context.getImageData(0, 0, canvas.width, canvas.height),
+      settings.imageColorSamples,
+      settings.imageColorTolerance,
+    );
+    const segmentationLoops = segmentation.groups.flatMap((group, groupIndex) => {
+      const mask = new Uint8Array(canvas.width * canvas.height);
+      segmentation.groupIndexMap.forEach((value, index) => {
+        if (value === groupIndex) {
+          mask[index] = 1;
+        }
+      });
+      return extractImageLoopsFromMask(
+        { mask, width: canvas.width, height: canvas.height },
+        canvas.height,
+        minRegionAreaPixels,
+        smoothingIterations,
+        simplificationTolerance,
+      );
+    });
+    finalized = finalizeImageLoops(segmentationLoops, duplicateTolerance);
+    primaryPreviewData = segmentation.quantizedData;
+    secondaryPreviewData = segmentation.segmentedData;
+    primaryLabel = "Sampled colors";
+    secondaryLabel = "Merged color regions";
+    previewMode = "segmentation";
+    tracedColorCount = segmentation.mergedColorCount;
+  } else {
+    const rawLoops = extractImageLoopsFromMask(
+      binary,
+      canvas.height,
+      minRegionAreaPixels,
+      smoothingIterations,
+      simplificationTolerance,
+    );
+    finalized = finalizeImageLoops(rawLoops, duplicateTolerance);
+  }
 
   return {
-    loops: normalizedLoops,
-    traceCandidates,
+    loops: finalized.loops,
+    traceCandidates: finalized.traceCandidates,
     importKind: "image",
-    sourceBounds: getRawBounds(limitedLoops),
+    sourceBounds: finalized.sourceBounds,
     sourceUnits: "px",
+    tracePreview: {
+      width: canvas.width,
+      height: canvas.height,
+      mode: previewMode,
+      primaryPreviewData,
+      secondaryPreviewData,
+      primaryLabel,
+      secondaryLabel,
+      sampledColorCount: tracedColorCount,
+      targetColorCount: binary.targetColorCount,
+      tracedRegionCount: finalized.traceCandidates.length,
+    },
   };
+}
+
+export async function previewImageTrace(file, settings) {
+  const image = await loadImage(file);
+  return buildImageTraceFromImage(image, settings).tracePreview;
+}
+
+async function getImageLoops(file, settings) {
+  const image = await loadImage(file);
+  return buildImageTraceFromImage(image, settings);
 }
 
 function loadImage(file) {
