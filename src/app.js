@@ -15,7 +15,7 @@ import {
   toWorldPoint,
 } from "./geometry.js";
 import { importProfile, previewImageTrace } from "./importers.js";
-import { createMaterialMaps } from "./materials.js";
+import { createMaterialMaps, speciesPresets } from "./materials.js";
 import { exportObjMesh, exportStlMesh, exportSurfaceJson } from "./exporters.js";
 
 const state = createDefaultState();
@@ -28,8 +28,11 @@ const HANDLE_COLORS = {
 };
 
 const elements = {
+  appShell: document.querySelector(".app-shell"),
   workspace: document.querySelector(".workspace"),
   body: document.body,
+  sidebar: document.querySelector(".sidebar"),
+  sidebarSplitter: document.getElementById("sidebarSplitter"),
   profileCard: document.querySelector(".profile-card"),
   profileCardHeader: document.querySelector(".profile-card-header"),
   surfaceCardHeader: document.querySelector(".surface-card .card-header"),
@@ -39,19 +42,33 @@ const elements = {
   imageTracePanel: document.getElementById("imageTracePanel"),
   imageTraceList: document.getElementById("imageTraceList"),
   applyTraceRegionsButton: document.getElementById("applyTraceRegionsButton"),
+  finalizeTraceButton: document.getElementById("finalizeTraceButton"),
   importSizingControls: document.getElementById("importSizingControls"),
   vectorImportOptions: document.getElementById("vectorImportOptions"),
   profileDropZone: document.getElementById("profileDropZone"),
   profileDropZoneLabel: document.getElementById("profileDropZoneLabel"),
   profileFileInput: document.getElementById("profileFileInput"),
+  saveProjectButton: document.getElementById("saveProjectButton"),
+  openProjectButton: document.getElementById("openProjectButton"),
+  openProjectInput: document.getElementById("openProjectInput"),
+  projectFileSummary: document.getElementById("projectFileSummary"),
+  projectUnitsSummary: document.getElementById("projectUnitsSummary"),
+  projectBoundsSummary: document.getElementById("projectBoundsSummary"),
+  projectRegionSummary: document.getElementById("projectRegionSummary"),
+  projectSourceSummary: document.getElementById("projectSourceSummary"),
   importProfileButton: document.getElementById("importProfileButton"),
   profileStatus: document.getElementById("profileStatus"),
+  tracePresetLogoButton: document.getElementById("tracePresetLogoButton"),
+  tracePresetLineArtButton: document.getElementById("tracePresetLineArtButton"),
+  tracePresetPhotoButton: document.getElementById("tracePresetPhotoButton"),
   imageThresholdInput: document.getElementById("imageThresholdInput"),
   imageThresholdNumber: document.getElementById("imageThresholdNumber"),
   imageImportModeThresholdButton: document.getElementById("imageImportModeThresholdButton"),
   imageImportModeSegmentationButton: document.getElementById("imageImportModeSegmentationButton"),
   thresholdMethodSettings: document.getElementById("thresholdMethodSettings"),
   segmentationMethodSettings: document.getElementById("segmentationMethodSettings"),
+  imageAdvancedControls: document.getElementById("imageAdvancedControls"),
+  toggleImageAdvancedButton: document.getElementById("toggleImageAdvancedButton"),
   invertImageInput: document.getElementById("invertImageInput"),
   imageColorSamplesInput: document.getElementById("imageColorSamplesInput"),
   imageColorSamplesNumber: document.getElementById("imageColorSamplesNumber"),
@@ -83,8 +100,13 @@ const elements = {
   closeImagePreviewModalButton: document.getElementById("closeImagePreviewModalButton"),
   modalImageImportModeThresholdButton: document.getElementById("modalImageImportModeThresholdButton"),
   modalImageImportModeSegmentationButton: document.getElementById("modalImageImportModeSegmentationButton"),
+  modalTracePresetLogoButton: document.getElementById("modalTracePresetLogoButton"),
+  modalTracePresetLineArtButton: document.getElementById("modalTracePresetLineArtButton"),
+  modalTracePresetPhotoButton: document.getElementById("modalTracePresetPhotoButton"),
   modalThresholdMethodSettings: document.getElementById("modalThresholdMethodSettings"),
   modalSegmentationMethodSettings: document.getElementById("modalSegmentationMethodSettings"),
+  modalImageAdvancedControls: document.getElementById("modalImageAdvancedControls"),
+  modalToggleImageAdvancedButton: document.getElementById("modalToggleImageAdvancedButton"),
   modalImageThresholdInput: document.getElementById("modalImageThresholdInput"),
   modalImageThresholdNumber: document.getElementById("modalImageThresholdNumber"),
   modalImageColorToleranceInput: document.getElementById("modalImageColorToleranceInput"),
@@ -121,6 +143,9 @@ const elements = {
   aspectLockInput: document.getElementById("aspectLockInput"),
   resolutionInput: document.getElementById("resolutionInput"),
   resolutionNumber: document.getElementById("resolutionNumber"),
+  previewQualityLowButton: document.getElementById("previewQualityLowButton"),
+  previewQualityMediumButton: document.getElementById("previewQualityMediumButton"),
+  previewQualityHighButton: document.getElementById("previewQualityHighButton"),
   heightScaleInput: document.getElementById("heightScaleInput"),
   heightScaleNumber: document.getElementById("heightScaleNumber"),
   edgeFadeControl: document.getElementById("edgeFadeControl"),
@@ -133,7 +158,6 @@ const elements = {
   internalEdgeFadeNumber: document.getElementById("internalEdgeFadeNumber"),
   showSurfaceResolutionInput: document.getElementById("showSurfaceResolutionInput"),
   woodToggleInput: document.getElementById("woodToggleInput"),
-  speciesSelect: document.getElementById("speciesSelect"),
   grainScaleInput: document.getElementById("grainScaleInput"),
   grainScaleNumber: document.getElementById("grainScaleNumber"),
   grainNoiseInput: document.getElementById("grainNoiseInput"),
@@ -175,12 +199,15 @@ const elements = {
   sharedContinuationSelect: document.getElementById("sharedContinuationSelect"),
   sharedOperationSelect: document.getElementById("sharedOperationSelect"),
   normalizeWavesInput: document.getElementById("normalizeWavesInput"),
+  waveSelectionSummary: document.getElementById("waveSelectionSummary"),
+  clearWaveSelectionButton: document.getElementById("clearWaveSelectionButton"),
   regionWaveSourceList: document.getElementById("regionWaveSourceList"),
   sourceList: document.getElementById("sourceList"),
   regionList: document.getElementById("regionList"),
   exportStlButton: document.getElementById("exportStlButton"),
   exportObjButton: document.getElementById("exportObjButton"),
   exportJsonButton: document.getElementById("exportJsonButton"),
+  exportUnitsStatus: document.getElementById("exportUnitsStatus"),
   loadSampleButton: document.getElementById("loadSampleButton"),
   dockProfileButton: document.getElementById("dockProfileButton"),
   bboxReadout: document.getElementById("bboxReadout"),
@@ -213,9 +240,11 @@ let liveAmbientLight;
 let liveKeyLight;
 let liveFillLight;
 let liveRimLight;
+let liveLightTarget;
 let livePmremGenerator;
 let liveEnvironmentScene;
 let liveEnvironmentTarget;
+let liveShadowCatcher;
 const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -361,6 +390,11 @@ function getPreviewUnits() {
 
 function convertSourceValueToPreviewUnits(value) {
   return convertUnitValue(value, state.meta.sourceUnits || "mm", getPreviewUnits());
+}
+
+function convertSourceAreaToPreviewUnits(areaValue) {
+  const linear = convertUnitValue(1, state.meta.sourceUnits || "mm", getPreviewUnits());
+  return areaValue * linear * linear;
 }
 
 function getAspectRatio(bounds) {
@@ -540,8 +574,8 @@ function getLoopCentroid(points) {
 }
 
 function formatAreaReadout(areaValue) {
-  const units = state.meta.sourceUnits || state.importSettings.units || "mm";
-  return `${areaValue.toFixed(2)} ${units}^2`;
+  const units = getPreviewUnits();
+  return `${convertSourceAreaToPreviewUnits(areaValue).toFixed(2)} ${units}^2`;
 }
 
 function syncImageTraceStatus() {
@@ -622,8 +656,64 @@ function getViewportBackgroundColor() {
   return backgroundColor;
 }
 
+function getSurfaceShadowMetrics(surfaceGrid = currentSurfaceGrid) {
+  const bounds = surfaceGrid?.bounds || {
+    minX: -0.5,
+    maxX: 0.5,
+    minY: -0.5,
+    maxY: 0.5,
+    width: 1,
+    height: 1,
+  };
+  const minHeight = Number(surfaceGrid?.minHeight) || 0;
+  const maxHeight = Number(surfaceGrid?.maxHeight) || 0;
+  const depth = Math.max(maxHeight - minHeight, 0.01);
+  const centerZ = SURFACE_PLANE_OFFSET + depth * 0.5;
+  const maxDimension = Math.max(bounds.width || 1, bounds.height || 1, depth || 1);
+  return {
+    centerX: bounds.minX + bounds.width * 0.5,
+    centerY: bounds.minY + bounds.height * 0.5,
+    centerZ,
+    width: Math.max(bounds.width || 1, 1),
+    height: Math.max(bounds.height || 1, 1),
+    depth,
+    maxDimension,
+  };
+}
+
+function positionDirectionalLight(light, targetObject, presetPosition, surfaceGrid = currentSurfaceGrid) {
+  if (!light || !targetObject) {
+    return;
+  }
+
+  const metrics = getSurfaceShadowMetrics(surfaceGrid);
+  const direction = new THREE.Vector3(...presetPosition);
+  if (direction.lengthSq() < 1e-6) {
+    direction.set(1, -1, 2);
+  }
+  direction.normalize();
+
+  const distance = Math.max(metrics.maxDimension * 1.45, 18);
+  targetObject.position.set(metrics.centerX, metrics.centerY, metrics.centerZ);
+  targetObject.updateMatrixWorld();
+  light.position.set(
+    metrics.centerX + direction.x * distance,
+    metrics.centerY + direction.y * distance,
+    metrics.centerZ + Math.max(direction.z * distance, metrics.depth * 2 + 6),
+  );
+  light.target = targetObject;
+}
+
 function applyViewportRenderLook() {
-  if (!scene || !renderer || !liveAmbientLight || !liveKeyLight || !liveFillLight || !liveRimLight) {
+  if (
+    !scene ||
+    !renderer ||
+    !liveAmbientLight ||
+    !liveKeyLight ||
+    !liveFillLight ||
+    !liveRimLight ||
+    !liveLightTarget
+  ) {
     return;
   }
 
@@ -642,15 +732,15 @@ function applyViewportRenderLook() {
     liveAmbientLight.intensity = preset.ambientIntensity;
     liveKeyLight.color.set(preset.keyColor);
     liveKeyLight.intensity = preset.keyIntensity;
-    liveKeyLight.position.set(...preset.keyPosition);
+    positionDirectionalLight(liveKeyLight, liveLightTarget, preset.keyPosition);
     configureDirectionalShadow(liveKeyLight, preset.shadowStrength, 2048);
     liveFillLight.color.set(preset.fillColor);
     liveFillLight.intensity = preset.fillIntensity;
-    liveFillLight.position.set(...preset.fillPosition);
+    positionDirectionalLight(liveFillLight, liveLightTarget, preset.fillPosition);
     liveFillLight.castShadow = false;
     liveRimLight.color.set(preset.rimColor);
     liveRimLight.intensity = preset.rimIntensity;
-    liveRimLight.position.set(...preset.rimPosition);
+    positionDirectionalLight(liveRimLight, liveLightTarget, preset.rimPosition);
     liveRimLight.castShadow = false;
     scene.environment = liveEnvironmentTarget?.texture || null;
   } else {
@@ -658,17 +748,22 @@ function applyViewportRenderLook() {
     liveAmbientLight.intensity = 1.4;
     liveKeyLight.color.set("#fff4e7");
     liveKeyLight.intensity = 2.1;
-    liveKeyLight.position.set(2.1, -1.8, 2.6);
+    positionDirectionalLight(liveKeyLight, liveLightTarget, [2.1, -1.8, 2.6]);
     configureDirectionalShadow(liveKeyLight, 0.9, 2048);
     liveFillLight.color.set("#f7dcc8");
     liveFillLight.intensity = 0.12;
-    liveFillLight.position.set(-1.5, 1.6, 1.1);
+    positionDirectionalLight(liveFillLight, liveLightTarget, [-1.5, 1.6, 1.1]);
     liveFillLight.castShadow = false;
     liveRimLight.color.set("#c9d8ff");
     liveRimLight.intensity = 0.36;
-    liveRimLight.position.set(-1.4, 1.3, 1.2);
+    positionDirectionalLight(liveRimLight, liveLightTarget, [-1.4, 1.3, 1.2]);
     liveRimLight.castShadow = false;
     scene.environment = null;
+  }
+
+  if (liveShadowCatcher) {
+    liveShadowCatcher.visible = previewEnabled;
+    liveShadowCatcher.material.opacity = previewEnabled ? 0.28 : 0;
   }
 }
 
@@ -817,6 +912,61 @@ function setImageImportMode(mode) {
     return;
   }
   syncView();
+}
+
+function toggleImageAdvanced() {
+  state.ui.imageAdvancedOpen = !state.ui.imageAdvancedOpen;
+  syncView();
+}
+
+function applyTracePreset(preset) {
+  const presets = {
+    logo: {
+      imageImportMode: "threshold",
+      imageThreshold: 150,
+      invertImage: false,
+      imageColorSamples: 6,
+      imagePhotoPrep: false,
+      imageUpscaleBeforeTrace: 1,
+      imageFlattenShading: false,
+      imageFlattenStrength: 0.65,
+      imageColorTolerance: 20,
+      imageMinRegionArea: 0.1,
+      imageCornerSmoothing: 1,
+      imagePathSimplification: 0.7,
+    },
+    lineart: {
+      imageImportMode: "threshold",
+      imageThreshold: 128,
+      invertImage: false,
+      imageColorSamples: 4,
+      imagePhotoPrep: false,
+      imageUpscaleBeforeTrace: 2,
+      imageFlattenShading: false,
+      imageFlattenStrength: 0.65,
+      imageColorTolerance: 18,
+      imageMinRegionArea: 0.06,
+      imageCornerSmoothing: 1,
+      imagePathSimplification: 0.5,
+    },
+    photo: {
+      imageImportMode: "segmentation",
+      imageThreshold: 140,
+      invertImage: false,
+      imageColorSamples: 12,
+      imagePhotoPrep: true,
+      imageUpscaleBeforeTrace: 2,
+      imageFlattenShading: true,
+      imageFlattenStrength: 0.8,
+      imageColorTolerance: 30,
+      imageMinRegionArea: 0.2,
+      imageCornerSmoothing: 2,
+      imagePathSimplification: 1,
+    },
+  };
+
+  Object.assign(state.importSettings, presets[preset]);
+  handleImageTraceSettingChange(`Applied ${preset === "lineart" ? "line art" : preset} trace preset`);
 }
 
 function formatBoundsReadout() {
@@ -1078,6 +1228,76 @@ function initFloatingProfileCard() {
   resizeObserver.observe(elements.surfaceCanvas);
 }
 
+function applySidebarWidth() {
+  if (!elements.appShell) {
+    return;
+  }
+  if (window.innerWidth <= 1100) {
+    elements.appShell.style.removeProperty("--sidebar-width");
+    return;
+  }
+  const minWidth = 360;
+  const splitterWidth = 14;
+  const minWorkspaceWidth = 520;
+  const maxWidth = Math.max(minWidth, window.innerWidth - minWorkspaceWidth - splitterWidth - 48);
+  const nextWidth = Math.min(Math.max(Number(state.ui.sidebarWidth) || 430, minWidth), maxWidth);
+  state.ui.sidebarWidth = nextWidth;
+  elements.appShell.style.setProperty("--sidebar-width", `${nextWidth}px`);
+}
+
+function initSidebarSplitter() {
+  if (!elements.sidebarSplitter || !elements.appShell) {
+    return;
+  }
+
+  applySidebarWidth();
+
+  const splitterState = {
+    active: false,
+    pointerId: null,
+  };
+
+  const release = (event) => {
+    if (!splitterState.active || splitterState.pointerId !== event.pointerId) {
+      return;
+    }
+    splitterState.active = false;
+    splitterState.pointerId = null;
+    elements.sidebarSplitter.classList.remove("is-dragging");
+    if (elements.sidebarSplitter.hasPointerCapture(event.pointerId)) {
+      elements.sidebarSplitter.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  elements.sidebarSplitter.addEventListener("pointerdown", (event) => {
+    if (window.innerWidth <= 1100) {
+      return;
+    }
+    splitterState.active = true;
+    splitterState.pointerId = event.pointerId;
+    elements.sidebarSplitter.classList.add("is-dragging");
+    elements.sidebarSplitter.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+
+  elements.sidebarSplitter.addEventListener("pointermove", (event) => {
+    if (!splitterState.active || splitterState.pointerId !== event.pointerId) {
+      return;
+    }
+    const shellRect = elements.appShell.getBoundingClientRect();
+    const minWidth = 360;
+    const splitterWidth = 14;
+    const minWorkspaceWidth = 520;
+    const maxWidth = Math.max(minWidth, shellRect.width - minWorkspaceWidth - splitterWidth);
+    state.ui.sidebarWidth = Math.min(Math.max(event.clientX - shellRect.left, minWidth), maxWidth);
+    applySidebarWidth();
+  });
+
+  elements.sidebarSplitter.addEventListener("pointerup", release);
+  elements.sidebarSplitter.addEventListener("pointercancel", release);
+  window.addEventListener("resize", applySidebarWidth);
+}
+
 function initCollapsiblePanels() {
   document.querySelectorAll(".sidebar .panel").forEach((panel) => {
     const heading = panel.querySelector(".panel-heading");
@@ -1115,6 +1335,20 @@ function formatSpeciesName(name) {
     .replace(/^./, (letter) => letter.toUpperCase());
 }
 
+function formatSpeciesShortName(name) {
+  const map = {
+    walnut: "Wal",
+    oak: "Oak",
+    ash: "Ash",
+    maple: "Map",
+    cherry: "Che",
+    padauk: "Pad",
+    purpleheart: "Pur",
+    redoak: "Red",
+  };
+  return map[name] || formatSpeciesName(name).slice(0, 3);
+}
+
 function preserveLoopSpecies(nextLoops) {
   return nextLoops.map((loop, index) => ({
     ...loop,
@@ -1137,6 +1371,25 @@ function createRegionWaveSource(loop) {
   source.reach = 120;
   source.continuation = "sustain";
   return source;
+}
+
+function duplicateManualSource(source) {
+  const pointSet = source.points.map((point) => ({
+    x: point.x + (source.type === "point" ? 8 : 10),
+    y: point.y + (source.type === "point" ? -8 : -10),
+  }));
+  const duplicateCount =
+    state.sources.filter((item) => item.type === source.type).length + 1;
+  const duplicate = createSource(source.type, pointSet, duplicateCount);
+  duplicate.label = `${source.label} Copy`;
+  duplicate.operation = source.operation;
+  duplicate.amplitude = source.amplitude;
+  duplicate.frequency = source.frequency;
+  duplicate.phase = source.phase;
+  duplicate.decay = source.decay;
+  duplicate.reach = source.reach;
+  duplicate.continuation = source.continuation;
+  return duplicate;
 }
 
 function syncRegionWaveSourcesToLoops() {
@@ -1162,6 +1415,14 @@ function syncSelectedWaveSourceIds() {
 function getSelectedWaveSources() {
   syncSelectedWaveSourceIds();
   return state.sources.filter((source) => state.ui.selectedWaveSourceIds.includes(source.id));
+}
+
+function isSourceLocked(source) {
+  return Boolean(source?.locked);
+}
+
+function isSourceHidden(source) {
+  return Boolean(source?.hidden);
 }
 
 function getPrimarySelectedWaveSource() {
@@ -1249,6 +1510,19 @@ function applyImageTraceSelection(selection = state.meta.imageTraceSelection) {
   state.loops = buildTraceLoopsFromSelection(state.meta.imageTraceCandidates, normalizedSelection);
 }
 
+function finalizeTraceSelection() {
+  state.meta.imageTraceCandidates = [];
+  state.meta.imageTraceSelection = { modes: {} };
+  state.meta.imageTraceDraftSelection = { modes: {} };
+  state.meta.hoveredTraceId = null;
+  state.meta.hoveredLoopId = null;
+  state.meta.imageTraceDirty = false;
+  state.meta.imageTracePreview = null;
+  state.meta.importKind = "vector";
+  state.ui.status = "Finalized traced regions into editable profile loops.";
+  syncView();
+}
+
 function applyImportedResult(result, fileName) {
   state.meta.importName = fileName;
   state.meta.importKind = result.importKind;
@@ -1297,6 +1571,7 @@ function applyImportedResult(result, fileName) {
     modes: {},
   };
   state.meta.hoveredTraceId = null;
+  state.meta.hoveredLoopId = null;
   state.loops = preserveLoopSpecies(assignLoopMetadata(result.loops));
 }
 
@@ -1338,14 +1613,6 @@ async function refreshImportedProfile(reasonLabel = "Updated import settings") {
     state.ui.status = error instanceof Error ? error.message : "Import refresh failed.";
     syncStatus();
   }
-}
-
-function populateSpeciesSelects() {
-  const options = state.meta.speciesList
-    .map((name) => `<option value="${name}">${formatSpeciesName(name)}</option>`)
-    .join("");
-  elements.speciesSelect.innerHTML = options;
-  elements.speciesSelect.value = state.surface.species;
 }
 
 function toScenePoint(point, height = 0) {
@@ -1475,6 +1742,13 @@ function attachHelperByDescriptor(descriptor) {
     return;
   }
 
+  const source = state.sources.find((item) => item.id === descriptor.sourceId);
+  if (!source || isSourceLocked(source) || isSourceHidden(source)) {
+    transformControls.detach();
+    selectedHelperDescriptor = null;
+    return;
+  }
+
   const match = helperGroup.children.find((child) => {
     const current = child.userData?.descriptor;
     return (
@@ -1584,6 +1858,9 @@ function update3DHelperObjects() {
   const selectedSquareTexture = createHandleTexture(HANDLE_COLORS.selected.fill, HANDLE_COLORS.selected.stroke, "square");
 
   state.sources.forEach((source) => {
+    if (isSourceHidden(source)) {
+      return;
+    }
     if (source.type === "point") {
       const descriptor = { sourceId: source.id, kind: "pointHandle", pointIndex: 0 };
       const selected = isSelectedDescriptor(descriptor);
@@ -1658,16 +1935,20 @@ function updateTraceHighlightObjects() {
   }
 
   traceHighlightGroup.clear();
-  if (!state.meta.hoveredTraceId || !state.meta.imageTraceCandidates?.length) {
+  let points = null;
+  if (state.meta.hoveredTraceId && state.meta.imageTraceCandidates?.length) {
+    const candidate = state.meta.imageTraceCandidates.find((item) => item.id === state.meta.hoveredTraceId);
+    points = candidate?.points || null;
+  } else if (state.meta.hoveredLoopId) {
+    const loop = state.loops.find((item) => item.id === state.meta.hoveredLoopId);
+    points = loop?.points || null;
+  }
+
+  if (!points?.length) {
     return;
   }
 
-  const candidate = state.meta.imageTraceCandidates.find((item) => item.id === state.meta.hoveredTraceId);
-  if (!candidate) {
-    return;
-  }
-
-  const highlightPoints = candidate.points.map((point) =>
+  const highlightPoints = points.map((point) =>
     toSurfaceScenePoint(point, Math.max(getWorldUnitsPerSourceUnit() * 0.8, 0.03)),
   );
   if (!highlightPoints.length) {
@@ -2003,7 +2284,7 @@ function initThree() {
     antialias: true,
     alpha: true,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  applyPreviewQuality();
   renderer.setSize(elements.surfaceCanvas.clientWidth, elements.surfaceCanvas.clientHeight, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -2013,6 +2294,9 @@ function initThree() {
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color("#efe8dd");
+
+  liveLightTarget = new THREE.Object3D();
+  scene.add(liveLightTarget);
 
   camera = new THREE.PerspectiveCamera(
     42,
@@ -2052,6 +2336,15 @@ function initThree() {
   liveRimLight = new THREE.DirectionalLight("#c9d8ff", 0.45);
   liveRimLight.position.set(-1.4, 1.3, 1.2);
   scene.add(liveRimLight);
+
+  liveShadowCatcher = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.ShadowMaterial({ color: "#000000", opacity: 0.28 }),
+  );
+  liveShadowCatcher.visible = false;
+  liveShadowCatcher.receiveShadow = true;
+  liveShadowCatcher.position.z = 0;
+  scene.add(liveShadowCatcher);
 
   livePmremGenerator = new THREE.PMREMGenerator(renderer);
   liveEnvironmentScene = new RoomEnvironment();
@@ -2143,6 +2436,12 @@ function updateThreeSurface() {
   surfaceMesh.receiveShadow = true;
   scene.add(surfaceMesh);
 
+  if (liveShadowCatcher) {
+    const metrics = getSurfaceShadowMetrics(currentSurfaceGrid);
+    liveShadowCatcher.scale.set(metrics.width + 40, metrics.height + 40, 1);
+    liveShadowCatcher.position.set(metrics.centerX, metrics.centerY, 0);
+  }
+
   if (state.surface.showResolutionEdges) {
     const wireframeGeometry = new THREE.WireframeGeometry(geometry);
     const wireframeMaterial = new THREE.LineBasicMaterial({
@@ -2160,6 +2459,7 @@ function updateThreeSurface() {
   update3DHelperObjects();
   updateTraceHighlightObjects();
   updateSceneGrid();
+  applyViewportRenderLook();
   elements.bboxReadout.textContent = formatBoundsReadout();
 }
 
@@ -2253,18 +2553,21 @@ function getRenderBackgroundColor(preset) {
   }
 }
 
-function configureDirectionalShadow(light, strength = 1, mapSize = 2048) {
+function configureDirectionalShadow(light, strength = 1, mapSize = 2048, surfaceGrid = currentSurfaceGrid) {
+  const metrics = getSurfaceShadowMetrics(surfaceGrid);
+  const halfExtent = Math.max(metrics.width, metrics.height) * 0.85 + metrics.depth * 2.5 + 10;
   light.castShadow = true;
   light.shadow.mapSize.set(mapSize, mapSize);
   light.shadow.bias = -0.00018 * strength;
   light.shadow.normalBias = 0.02 * strength;
   light.shadow.radius = 2 + strength * 1.5;
   light.shadow.camera.near = 0.1;
-  light.shadow.camera.far = 12;
-  light.shadow.camera.left = -2.4;
-  light.shadow.camera.right = 2.4;
-  light.shadow.camera.top = 2.4;
-  light.shadow.camera.bottom = -2.4;
+  light.shadow.camera.far = Math.max(metrics.maxDimension * 5.5, 180);
+  light.shadow.camera.left = -halfExtent;
+  light.shadow.camera.right = halfExtent;
+  light.shadow.camera.top = halfExtent;
+  light.shadow.camera.bottom = -halfExtent;
+  light.shadow.camera.updateProjectionMatrix();
 }
 
 function buildStillRenderState() {
@@ -2352,6 +2655,9 @@ async function renderStillImage() {
     const backgroundColor = getRenderBackgroundColor(preset);
     renderScene.background = backgroundColor ? new THREE.Color(backgroundColor) : null;
 
+    const renderLightTarget = new THREE.Object3D();
+    renderScene.add(renderLightTarget);
+
     const pmremGenerator = new THREE.PMREMGenerator(renderRenderer);
     environmentScene = new RoomEnvironment();
     const environmentTarget = pmremGenerator.fromScene(environmentScene, 0.03);
@@ -2360,22 +2666,22 @@ async function renderStillImage() {
 
     renderScene.add(new THREE.AmbientLight(preset.ambientColor, preset.ambientIntensity));
 
+    const { renderState, renderGrid } = buildStillRenderState();
+
     const keyLight = new THREE.DirectionalLight(preset.keyColor, preset.keyIntensity);
-    keyLight.position.set(...preset.keyPosition);
-    configureDirectionalShadow(keyLight, preset.shadowStrength, 4096);
+    positionDirectionalLight(keyLight, renderLightTarget, preset.keyPosition, renderGrid);
+    configureDirectionalShadow(keyLight, preset.shadowStrength, 4096, renderGrid);
     renderScene.add(keyLight);
 
     const fillLight = new THREE.DirectionalLight(preset.fillColor, preset.fillIntensity);
-    fillLight.position.set(...preset.fillPosition);
+    positionDirectionalLight(fillLight, renderLightTarget, preset.fillPosition, renderGrid);
     fillLight.castShadow = false;
     renderScene.add(fillLight);
 
     const rimLight = new THREE.DirectionalLight(preset.rimColor, preset.rimIntensity);
-    rimLight.position.set(...preset.rimPosition);
+    positionDirectionalLight(rimLight, renderLightTarget, preset.rimPosition, renderGrid);
     rimLight.castShadow = false;
     renderScene.add(rimLight);
-
-    const { renderState, renderGrid } = buildStillRenderState();
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(renderGrid.positions, 3));
     geometry.setAttribute("uv", new THREE.Float32BufferAttribute(renderGrid.uvs, 2));
@@ -2393,10 +2699,19 @@ async function renderStillImage() {
     disposableResources.push(renderColorMap, renderAlphaMap);
 
     const mesh = new THREE.Mesh(geometry, buildSurfaceMaterial(renderColorMap, renderAlphaMap));
-    mesh.position.z = -renderGrid.minHeight;
+    mesh.position.z = -renderGrid.minHeight + SURFACE_PLANE_OFFSET;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     renderScene.add(mesh);
+
+    const shadowMetrics = getSurfaceShadowMetrics(renderGrid);
+    const shadowCatcher = new THREE.Mesh(
+      new THREE.PlaneGeometry(shadowMetrics.width + 40, shadowMetrics.height + 40),
+      new THREE.ShadowMaterial({ color: "#000000", opacity: 0.32 }),
+    );
+    shadowCatcher.position.set(shadowMetrics.centerX, shadowMetrics.centerY, 0);
+    shadowCatcher.receiveShadow = true;
+    renderScene.add(shadowCatcher);
 
     const renderCamera = camera.clone();
     renderCamera.aspect = width / Math.max(height, 1);
@@ -2489,6 +2804,18 @@ function renderProfileCanvas() {
     const candidate = state.meta.imageTraceCandidates.find((item) => item.id === state.meta.hoveredTraceId);
     if (candidate) {
       drawLoop(profileContext, { points: candidate.points }, bounds, width, height);
+      profileContext.fillStyle = "rgba(63, 182, 255, 0.12)";
+      profileContext.fill();
+      profileContext.strokeStyle = "#3fb6ff";
+      profileContext.lineWidth = 3;
+      profileContext.stroke();
+    }
+  }
+
+  if (state.meta.hoveredLoopId) {
+    const hoveredLoop = state.loops.find((loop) => loop.id === state.meta.hoveredLoopId);
+    if (hoveredLoop) {
+      drawLoop(profileContext, hoveredLoop, bounds, width, height);
       profileContext.fillStyle = "rgba(63, 182, 255, 0.12)";
       profileContext.fill();
       profileContext.strokeStyle = "#3fb6ff";
@@ -2619,7 +2946,7 @@ function pick2DSourceHandle(canvasPoint) {
   let best = null;
 
   state.sources.forEach((source) => {
-    if (source.type === "region") {
+    if (source.type === "region" || isSourceHidden(source) || isSourceLocked(source)) {
       return;
     }
     source.points.forEach((point, pointIndex) => {
@@ -2828,7 +3155,13 @@ function handleSurfacePointerDown(event) {
     return;
   }
 
-  setSelectedHelperDescriptor(picked.userData.descriptor);
+  const descriptor = picked.userData?.descriptor;
+  const source = state.sources.find((item) => item.id === descriptor?.sourceId);
+  if (!source || isSourceLocked(source)) {
+    return;
+  }
+
+  setSelectedHelperDescriptor(descriptor);
   helperDragState.active = true;
   helperDragState.pointerId = event.pointerId;
   helperDragState.descriptor = selectedHelperDescriptor;
@@ -2898,7 +3231,11 @@ function renderRegionWaveSourceList() {
         <span>${loop.label}</span>
       </label>
       <span class="wave-source-row-meta">${
-        source ? (isWaveSourceSelected(source.id) ? "Selected" : "Enabled") : "Off"
+        source
+          ? [isWaveSourceSelected(source.id) ? "Selected" : "Enabled", source.locked ? "Locked" : null, source.hidden ? "Hidden" : null]
+              .filter(Boolean)
+              .join(" / ")
+          : "Off"
       }</span>
     `;
 
@@ -2946,6 +3283,40 @@ function renderRegionWaveSourceList() {
     `;
     const enabledList = enabledCard.querySelector(".compact-wave-list");
     enabledRows.forEach((row) => enabledList.append(row));
+    enabledList.querySelectorAll(".wave-source-row").forEach((row) => {
+      const loopId = row.querySelector('[data-action="toggle-region-wave"]')?.dataset.loopId;
+      const source = state.sources.find((item) => item.type === "region" && item.regionLoopId === loopId);
+      if (!source) {
+        return;
+      }
+      const meta = row.querySelector(".wave-source-row-meta");
+      meta.outerHTML = `
+        <div class="wave-source-row-actions">
+        <label class="checkbox-control wave-source-secondary">
+          <input type="checkbox" data-action="select-region-wave-source" data-source-id="${source.id}" ${isWaveSourceSelected(source.id) ? "checked" : ""} />
+          <span>Edit</span>
+        </label>
+        <button class="ghost-button compact-action-button" type="button" data-action="toggle-hide-region" data-source-id="${source.id}">${source.hidden ? "Show" : "Hide"}</button>
+        <button class="ghost-button compact-action-button" type="button" data-action="toggle-lock-region" data-source-id="${source.id}">${source.locked ? "Unlock" : "Lock"}</button>
+        </div>
+      `;
+      const actions = row.querySelector(".wave-source-row-actions");
+
+      actions.querySelector('[data-action="select-region-wave-source"]').addEventListener("change", (event) => {
+        toggleWaveSourceSelection(source.id, event.target.checked);
+        syncWaveUiOnly();
+      });
+      actions.querySelector('[data-action="toggle-hide-region"]').addEventListener("click", () => {
+        source.hidden = !source.hidden;
+        state.ui.status = `${source.hidden ? "Hid" : "Showed"} ${source.label} guides.`;
+        syncWaveUiOnly();
+      });
+      actions.querySelector('[data-action="toggle-lock-region"]').addEventListener("click", () => {
+        source.locked = !source.locked;
+        state.ui.status = `${source.locked ? "Locked" : "Unlocked"} ${source.label}.`;
+        syncWaveUiOnly();
+      });
+    });
     enabledCard.querySelector('[data-action="unselect-all-region-waves"]').addEventListener("click", () => {
       const regionSources = innerLoops
         .map((loop) => state.sources.find((item) => item.type === "region" && item.regionLoopId === loop.id))
@@ -2954,7 +3325,7 @@ function renderRegionWaveSourceList() {
         toggleWaveSourceSelection(sourceItem.id, false);
       });
       state.ui.status = "Unselected all region wave sources.";
-      syncView();
+      syncWaveUiOnly();
     });
     elements.regionWaveSourceList.append(enabledCard);
   }
@@ -3052,13 +3423,33 @@ function renderSourceList() {
             />
             <span>Edit</span>
           </label>
+          <button data-action="duplicate-source" data-source-id="${source.id}" class="ghost-button compact-action-button" type="button">Duplicate</button>
+          <button data-action="toggle-hide-source" data-source-id="${source.id}" class="ghost-button compact-action-button" type="button">${source.hidden ? "Show" : "Hide"}</button>
+          <button data-action="toggle-lock-source" data-source-id="${source.id}" class="ghost-button compact-action-button" type="button">${source.locked ? "Unlock" : "Lock"}</button>
           <button data-action="remove-source" data-source-id="${source.id}" class="ghost-button" type="button">Remove</button>
         </div>
       `;
 
       row.querySelector('[data-action="select-wave-source"]').addEventListener("change", (event) => {
         toggleWaveSourceSelection(event.target.dataset.sourceId, event.target.checked);
+        syncWaveUiOnly();
+      });
+      row.querySelector('[data-action="duplicate-source"]').addEventListener("click", () => {
+        const duplicate = duplicateManualSource(source);
+        state.sources.push(duplicate);
+        toggleWaveSourceSelection(duplicate.id, true);
+        state.ui.status = `Duplicated ${source.label}.`;
         syncView();
+      });
+      row.querySelector('[data-action="toggle-hide-source"]').addEventListener("click", () => {
+        source.hidden = !source.hidden;
+        state.ui.status = `${source.hidden ? "Hid" : "Showed"} ${source.label} guides.`;
+        syncWaveUiOnly();
+      });
+      row.querySelector('[data-action="toggle-lock-source"]').addEventListener("click", () => {
+        source.locked = !source.locked;
+        state.ui.status = `${source.locked ? "Locked" : "Unlocked"} ${source.label}.`;
+        syncWaveUiOnly();
       });
       row.querySelector('[data-action="remove-source"]').addEventListener("click", () => {
         toggleWaveSourceSelection(source.id, false);
@@ -3075,7 +3466,7 @@ function renderSourceList() {
         toggleWaveSourceSelection(source.id, nextSelected);
       });
       state.ui.status = `${nextSelected ? "Selected" : "Deselected"} all ${group.type} wave sources.`;
-      syncView();
+      syncWaveUiOnly();
     });
 
     elements.sourceList.append(card);
@@ -3084,37 +3475,159 @@ function renderSourceList() {
 
 function renderRegionList() {
   const innerLoops = state.loops.filter((loop) => loop.role === "inner");
+  elements.regionList.innerHTML = "";
+  const scrollWrap = document.createElement("div");
+  scrollWrap.className = "region-species-scroll-wrap";
+  scrollWrap.addEventListener(
+    "wheel",
+    (event) => {
+      const hasHorizontalOverflow = scrollWrap.scrollWidth > scrollWrap.clientWidth;
+      if (!hasHorizontalOverflow) {
+        return;
+      }
+      if (Math.abs(event.deltaY) < Math.abs(event.deltaX) && event.deltaX === 0) {
+        return;
+      }
+      scrollWrap.scrollLeft += event.deltaY + event.deltaX;
+      event.preventDefault();
+    },
+    { passive: false },
+  );
+  const table = document.createElement("div");
+  table.className = "region-species-table";
+
+  const header = document.createElement("div");
+  header.className = "region-species-table-head";
+  header.innerHTML = `
+    <div class="region-species-head-label">Region</div>
+    <div class="region-species-head-options">
+      ${state.meta.speciesList
+        .map((speciesName) => {
+          const palette = speciesPresets[speciesName] || speciesPresets.walnut;
+          return `
+            <div class="region-species-head-item" title="${formatSpeciesName(speciesName)}">
+              <span
+                class="region-species-swatch"
+                style="--species-color: ${palette.base}; --species-contrast: ${palette.light};"
+              ></span>
+              <span>${formatSpeciesShortName(speciesName)}</span>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+  table.append(header);
+
+  const baseRow = document.createElement("div");
+  baseRow.className = "region-species-row region-species-row-base";
+  baseRow.innerHTML = `
+    <div class="region-species-row-info">
+      <strong>Base Surface</strong>
+      <span>Outer surface wood species</span>
+    </div>
+    <div class="region-species-row-options">
+      ${state.meta.speciesList
+        .map((speciesName) => {
+          const palette = speciesPresets[speciesName] || speciesPresets.walnut;
+          return `
+            <button
+              class="region-species-choice ${state.surface.species === speciesName ? "is-active" : ""}"
+              type="button"
+              data-surface-species="${speciesName}"
+              aria-label="Assign base surface to ${formatSpeciesName(speciesName)}"
+              title="${formatSpeciesName(speciesName)}"
+              style="--species-color: ${palette.base}; --species-contrast: ${palette.light};"
+            >
+              <span class="region-species-choice-box"></span>
+            </button>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+  baseRow.querySelectorAll(".region-species-choice").forEach((choice) => {
+    choice.addEventListener("click", () => {
+      const speciesName = choice.dataset.surfaceSpecies;
+      if (!speciesName || state.surface.species === speciesName) {
+        return;
+      }
+      updateSurfaceSetting("species", speciesName);
+    });
+  });
+  table.append(baseRow);
+
   if (!innerLoops.length) {
-    elements.regionList.innerHTML = '<p class="status-text">No interior color-break regions detected.</p>';
+    const empty = document.createElement("p");
+    empty.className = "status-text";
+    empty.textContent = "No interior color-break regions detected.";
+    table.append(empty);
+    scrollWrap.append(table);
+    elements.regionList.append(scrollWrap);
     return;
   }
 
-  elements.regionList.innerHTML = "";
   innerLoops.forEach((loop) => {
-    const card = document.createElement("article");
-    card.className = "region-card";
-    card.innerHTML = `
-      <header>
-        <div>
-          <h3>${loop.label}</h3>
-          <p>Interior material break</p>
-        </div>
-      </header>
-      <label class="control">
-        <span>Species</span>
-        <select data-loop-id="${loop.id}">
-          ${state.meta.speciesList
-            .map((name) => `<option value="${name}" ${loop.species === name ? "selected" : ""}>${formatSpeciesName(name)}</option>`)
-            .join("")}
-        </select>
-      </label>
+    const row = document.createElement("div");
+    row.className = "region-species-row";
+    row.innerHTML = `
+      <div class="region-species-row-info">
+        <strong>${loop.label}</strong>
+        <span>${formatAreaReadout(Math.abs(polygonArea(loop.points)))}</span>
+      </div>
+      <div class="region-species-row-options">
+        ${state.meta.speciesList
+          .map((speciesName) => {
+            const palette = speciesPresets[speciesName] || speciesPresets.walnut;
+            return `
+              <button
+                class="region-species-choice ${loop.species === speciesName ? "is-active" : ""}"
+                type="button"
+                data-loop-id="${loop.id}"
+                data-species="${speciesName}"
+                aria-label="Assign ${loop.label} to ${formatSpeciesName(speciesName)}"
+                title="${formatSpeciesName(speciesName)}"
+                style="--species-color: ${palette.base}; --species-contrast: ${palette.light};"
+              >
+                <span class="region-species-choice-box"></span>
+              </button>
+            `;
+          })
+          .join("")}
+      </div>
     `;
-    card.querySelector("select").addEventListener("change", (event) => {
-      loop.species = event.target.value;
-      syncView();
+
+    row.addEventListener("mouseenter", () => {
+      state.meta.hoveredLoopId = loop.id;
+      renderProfileCanvas();
+      updateTraceHighlightObjects();
     });
-    elements.regionList.append(card);
+    row.addEventListener("mouseleave", () => {
+      if (state.meta.hoveredLoopId !== loop.id) {
+        return;
+      }
+      state.meta.hoveredLoopId = null;
+      renderProfileCanvas();
+      updateTraceHighlightObjects();
+    });
+
+    row.querySelectorAll(".region-species-choice").forEach((choice) => {
+      choice.addEventListener("click", () => {
+        const speciesName = choice.dataset.species;
+        if (!speciesName || loop.species === speciesName) {
+          return;
+        }
+        loop.species = speciesName;
+        state.ui.status = `${loop.label} assigned to ${formatSpeciesName(speciesName)}.`;
+        syncView();
+      });
+    });
+
+    table.append(row);
   });
+
+  scrollWrap.append(table);
+  elements.regionList.append(scrollWrap);
 }
 
 function renderImageTraceList() {
@@ -3237,8 +3750,71 @@ function syncInactiveControlState(element, active) {
   element.classList.toggle("is-inactive", !active);
 }
 
+function getVisibleImageTraceControlsActive() {
+  return Boolean(
+    state.meta.pendingImportFile ||
+    (state.meta.importedFile && state.meta.importKind === "image"),
+  );
+}
+
+function syncProjectSummary() {
+  elements.projectFileSummary.textContent = `File: ${state.meta.importName || "Untitled"}`;
+  elements.projectUnitsSummary.textContent = `Working units: ${getPreviewUnits()} | Source units: ${state.meta.sourceUnits || "mm"}`;
+  elements.projectBoundsSummary.textContent = formatBoundsReadout().replace("BBox ", "BBox: ");
+  elements.projectRegionSummary.textContent = `Interior regions: ${state.loops.filter((loop) => loop.role === "inner").length}`;
+  elements.projectSourceSummary.textContent = `Wave sources: ${state.sources.length}`;
+}
+
+function syncExportSummary() {
+  const units = getPreviewUnits();
+  elements.exportUnitsStatus.textContent = `Exported values follow the current preview units: ${units}.`;
+}
+
+function syncWaveSelectionSummary() {
+  const selectedSources = getSelectedWaveSources();
+  if (!selectedSources.length) {
+    elements.waveSelectionSummary.textContent = "Select a wave source to edit its settings.";
+    elements.clearWaveSelectionButton.disabled = true;
+    return;
+  }
+
+  elements.clearWaveSelectionButton.disabled = false;
+  if (selectedSources.length === 1) {
+    elements.waveSelectionSummary.textContent = `Editing ${selectedSources[0].label}.`;
+    return;
+  }
+
+  elements.waveSelectionSummary.textContent = `Editing ${selectedSources.length} wave sources.`;
+}
+
+function applyPreviewQuality() {
+  if (!renderer) {
+    return;
+  }
+  const qualityCap =
+    state.ui.previewQuality === "low"
+      ? 1
+      : state.ui.previewQuality === "high"
+        ? 2
+        : 1.5;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, qualityCap));
+  renderer.setSize(elements.surfaceCanvas.clientWidth, elements.surfaceCanvas.clientHeight, false);
+}
+
+function syncWaveUiOnly() {
+  syncWaveSelectionSummary();
+  syncSharedWaveSettingsPanel();
+  renderRegionWaveSourceList();
+  renderSourceList();
+  syncStatus();
+  renderProfileCanvas();
+  update3DHelperObjects();
+}
+
 function syncView() {
+  applySidebarWidth();
   const hasPendingImportFile = Boolean(state.meta.pendingImportFile);
+  const imageControlsActive = getVisibleImageTraceControlsActive();
   elements.svgSamplesInput.value = String(state.importSettings.curveSamples);
   elements.svgSamplesNumber.value = String(state.importSettings.curveSamples);
   elements.unitsMmButton.classList.toggle("is-active", state.importSettings.units === "mm");
@@ -3255,11 +3831,14 @@ function syncView() {
   elements.importProfileButton.textContent = state.meta.pendingImportFile
     ? `Import ${state.meta.pendingImportFile.name}`
     : "Import Selected File";
-  syncInactiveControlState(elements.imageImportOptions, hasPendingImportFile);
+  syncInactiveControlState(elements.imageImportOptions, imageControlsActive);
   syncInactiveControlState(elements.importSizingControls, hasPendingImportFile);
   syncInactiveControlState(elements.vectorImportOptions, hasPendingImportFile);
   elements.resolutionInput.value = String(state.surface.resolution);
   elements.resolutionNumber.value = String(state.surface.resolution);
+  elements.previewQualityLowButton.classList.toggle("is-active", state.ui.previewQuality === "low");
+  elements.previewQualityMediumButton.classList.toggle("is-active", state.ui.previewQuality === "medium");
+  elements.previewQualityHighButton.classList.toggle("is-active", state.ui.previewQuality === "high");
   elements.heightScaleInput.value = String(state.surface.heightScale);
   elements.heightScaleNumber.value = String(state.surface.heightScale);
   elements.edgeFadeEnabledInput.checked = state.surface.edgeFadeEnabled;
@@ -3277,7 +3856,6 @@ function syncView() {
   syncInactiveControlState(elements.internalEdgeFadeControl, state.surface.internalEdgeFadeEnabled);
   elements.showSurfaceResolutionInput.checked = state.surface.showResolutionEdges;
   elements.woodToggleInput.checked = state.surface.woodEnabled;
-  elements.speciesSelect.value = state.surface.species;
   elements.grainScaleInput.value = String(state.surface.grainScale);
   elements.grainScaleNumber.value = String(state.surface.grainScale);
   elements.grainNoiseInput.value = String(state.surface.grainNoise);
@@ -3297,13 +3875,17 @@ function syncView() {
   elements.renderLockAspectInput.checked = state.render.lockAspect;
   elements.renderPreviewInput.checked = state.render.previewInViewport;
   elements.renderBackgroundSelect.value = state.render.background;
+  elements.imageAdvancedControls.classList.toggle("is-hidden", !state.ui.imageAdvancedOpen);
+  elements.modalImageAdvancedControls.classList.toggle("is-hidden", !state.ui.imageAdvancedOpen);
+  elements.toggleImageAdvancedButton.textContent = state.ui.imageAdvancedOpen ? "Hide Advanced" : "Show Advanced";
+  elements.modalToggleImageAdvancedButton.textContent = state.ui.imageAdvancedOpen ? "Hide Advanced" : "Show Advanced";
 
   updateImportOptionsVisibility();
-  elements.bboxReadout.textContent = formatBoundsReadout();
   elements.toggleHelpersButton.textContent = state.ui.show3DHelpers ? "Hide Guides" : "Show Guides";
   syncTheme();
   syncImageTraceControls();
   syncRegionWaveSourcesToLoops();
+  syncWaveSelectionSummary();
   syncSharedWaveSettingsPanel();
   renderImageTraceList();
   renderRegionWaveSourceList();
@@ -3314,6 +3896,9 @@ function syncView() {
   syncCanvasSizes();
   renderProfileCanvas();
   updateThreeSurface();
+  syncProjectSummary();
+  syncExportSummary();
+  applyPreviewQuality();
 }
 
 function updateSurfaceSetting(key, value) {
@@ -3440,6 +4025,92 @@ function setPreviewUnits(nextUnits) {
   syncView();
 }
 
+function downloadJson(filename, payload) {
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], {
+    type: "application/json;charset=utf-8",
+  });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function buildProjectPayload() {
+  return {
+    format: "wavythought-project-v1",
+    savedAt: new Date().toISOString(),
+    project: {
+      loops: state.loops,
+      sources: state.sources,
+      importSettings: state.importSettings,
+      surface: state.surface,
+      render: state.render,
+      ui: {
+        theme: state.ui.theme,
+        followSystemTheme: state.ui.followSystemTheme,
+        previewUnits: state.ui.previewUnits,
+        previewQuality: state.ui.previewQuality,
+        imageAdvancedOpen: state.ui.imageAdvancedOpen,
+      },
+      meta: {
+        importName: state.meta.importName,
+        importKind: state.meta.importKind,
+        sourceBounds: state.meta.sourceBounds,
+        nativeSourceBounds: state.meta.nativeSourceBounds,
+        sourceUnits: state.meta.sourceUnits,
+      },
+    },
+  };
+}
+
+function loadProjectPayload(payload) {
+  if (payload?.format !== "wavythought-project-v1" || !payload.project) {
+    throw new Error("Unsupported project file.");
+  }
+
+  const fresh = createDefaultState();
+  const project = payload.project;
+  state.loops = project.loops || fresh.loops;
+  state.sources = (project.sources || fresh.sources).map((source) => ({
+    locked: false,
+    hidden: false,
+    ...source,
+  }));
+  state.importSettings = { ...fresh.importSettings, ...(project.importSettings || {}) };
+  state.surface = { ...fresh.surface, ...(project.surface || {}) };
+  state.render = { ...fresh.render, ...(project.render || {}) };
+  state.ui = {
+    ...fresh.ui,
+    ...(project.ui || {}),
+    selectedSourceId: null,
+    selectedWaveSourceIds: [],
+    placementMode: null,
+    pendingCurvePoints: [],
+    status: `Opened ${project.meta?.importName || "project"}.`,
+  };
+  state.meta.importName = project.meta?.importName || fresh.meta.importName;
+  state.meta.importKind = "vector";
+  state.meta.sourceBounds = project.meta?.sourceBounds || fresh.meta.sourceBounds;
+  state.meta.nativeSourceBounds = project.meta?.nativeSourceBounds || state.meta.sourceBounds;
+  state.meta.sourceUnits = project.meta?.sourceUnits || fresh.meta.sourceUnits;
+  state.meta.importedFile = null;
+  state.meta.pendingImportFile = null;
+  state.meta.pendingImportKind = null;
+  state.meta.importRequestId = 0;
+  state.meta.imageTraceCandidates = [];
+  state.meta.imageTraceSelection = { modes: {} };
+  state.meta.imageTraceDraftSelection = { modes: {} };
+  state.meta.hoveredTraceId = null;
+  state.meta.imageTraceDirty = false;
+  state.meta.imageTracePreview = null;
+  state.meta.imageTraceRevision = 0;
+  state.meta.imageTracePreviewRequestId = 0;
+  state.meta.imageTraceAppliedSettings = { ...fresh.meta.imageTraceAppliedSettings };
+  setSelectedHelperDescriptor(null);
+  syncView();
+}
+
 function resetToSample() {
   const fresh = createDefaultState();
   state.loops = fresh.loops;
@@ -3460,6 +4131,7 @@ function resetToSample() {
   state.meta.imageTraceSelection = fresh.meta.imageTraceSelection;
   state.meta.imageTraceDraftSelection = fresh.meta.imageTraceDraftSelection;
   state.meta.hoveredTraceId = fresh.meta.hoveredTraceId;
+  state.meta.hoveredLoopId = fresh.meta.hoveredLoopId;
   state.meta.imageTraceDirty = fresh.meta.imageTraceDirty;
   state.meta.imageTraceRevision = fresh.meta.imageTraceRevision;
   state.meta.imageTracePreview = fresh.meta.imageTracePreview;
@@ -3485,7 +4157,6 @@ function resetToSample() {
   state.ui.status = "Loaded the bundled sample profile.";
   elements.profileFileInput.value = "";
   state.ui.pendingCurvePoints = [];
-  populateSpeciesSelects();
   syncView();
   resetSurfaceView();
 }
@@ -3597,6 +4268,28 @@ function finalizePendingCurveSource() {
 }
 
 function syncImageTraceControls() {
+  const presetMatches = {
+    logo:
+      state.importSettings.imageImportMode === "threshold" &&
+      state.importSettings.imageThreshold === 150 &&
+      state.importSettings.imageColorSamples === 6 &&
+      !state.importSettings.imagePhotoPrep,
+    lineart:
+      state.importSettings.imageImportMode === "threshold" &&
+      state.importSettings.imageThreshold === 128 &&
+      state.importSettings.imageUpscaleBeforeTrace === 2 &&
+      state.importSettings.imagePathSimplification === 0.5,
+    photo:
+      state.importSettings.imageImportMode === "segmentation" &&
+      state.importSettings.imagePhotoPrep &&
+      state.importSettings.imageFlattenShading,
+  };
+  elements.tracePresetLogoButton.classList.toggle("is-active", presetMatches.logo);
+  elements.tracePresetLineArtButton.classList.toggle("is-active", presetMatches.lineart);
+  elements.tracePresetPhotoButton.classList.toggle("is-active", presetMatches.photo);
+  elements.modalTracePresetLogoButton.classList.toggle("is-active", presetMatches.logo);
+  elements.modalTracePresetLineArtButton.classList.toggle("is-active", presetMatches.lineart);
+  elements.modalTracePresetPhotoButton.classList.toggle("is-active", presetMatches.photo);
   elements.imageThresholdInput.value = String(state.importSettings.imageThreshold);
   elements.imageThresholdNumber.value = String(state.importSettings.imageThreshold);
   elements.modalImageThresholdInput.value = String(state.importSettings.imageThreshold);
@@ -3646,6 +4339,9 @@ function syncImageTraceControls() {
   elements.retraceImageButton.textContent = state.meta.imageTraceDirty ? "Retrace Image*" : "Retrace Image";
   elements.modalRetraceImageButton.disabled = !(state.meta.importedFile && state.meta.importKind === "image");
   elements.modalRetraceImageButton.textContent = state.meta.imageTraceDirty ? "Retrace Image*" : "Retrace Image";
+  elements.finalizeTraceButton.disabled = !state.meta.imageTraceCandidates?.length;
+  elements.toggleImageAdvancedButton.textContent = state.ui.imageAdvancedOpen ? "Hide Advanced" : "Show Advanced";
+  elements.modalToggleImageAdvancedButton.textContent = state.ui.imageAdvancedOpen ? "Hide Advanced" : "Show Advanced";
   setImagePreviewModalOpen(state.ui.imagePreviewModalOpen);
   updateImportOptionsVisibility();
   syncImageTraceStatus();
@@ -3696,6 +4392,28 @@ function wireEvents() {
   });
   elements.importProfileButton.addEventListener("click", importPendingFile);
   elements.loadSampleButton.addEventListener("click", resetToSample);
+  elements.saveProjectButton.addEventListener("click", () => {
+    const safeName = (state.meta.importName || "wavythought-project").replace(/[^a-z0-9-_]+/gi, "-");
+    downloadJson(`${safeName}.project.json`, buildProjectPayload());
+  });
+  elements.openProjectButton.addEventListener("click", () => {
+    elements.openProjectInput.click();
+  });
+  elements.openProjectInput.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const payload = JSON.parse(await file.text());
+      loadProjectPayload(payload);
+    } catch (error) {
+      state.ui.status = error instanceof Error ? error.message : "Failed to open project file.";
+      syncStatus();
+    } finally {
+      elements.openProjectInput.value = "";
+    }
+  });
   elements.themeLightButton.addEventListener("click", () => {
     state.ui.theme = "light";
     state.ui.followSystemTheme = false;
@@ -3712,12 +4430,20 @@ function wireEvents() {
   elements.imageImportModeSegmentationButton.addEventListener("click", () => {
     setImageImportMode("segmentation");
   });
+  elements.tracePresetLogoButton.addEventListener("click", () => applyTracePreset("logo"));
+  elements.tracePresetLineArtButton.addEventListener("click", () => applyTracePreset("lineart"));
+  elements.tracePresetPhotoButton.addEventListener("click", () => applyTracePreset("photo"));
+  elements.toggleImageAdvancedButton.addEventListener("click", toggleImageAdvanced);
   elements.modalImageImportModeThresholdButton.addEventListener("click", () => {
     setImageImportMode("threshold");
   });
   elements.modalImageImportModeSegmentationButton.addEventListener("click", () => {
     setImageImportMode("segmentation");
   });
+  elements.modalTracePresetLogoButton.addEventListener("click", () => applyTracePreset("logo"));
+  elements.modalTracePresetLineArtButton.addEventListener("click", () => applyTracePreset("lineart"));
+  elements.modalTracePresetPhotoButton.addEventListener("click", () => applyTracePreset("photo"));
+  elements.modalToggleImageAdvancedButton.addEventListener("click", toggleImageAdvanced);
   [elements.imageColorPreviewCard, elements.imageThresholdPreviewCard].forEach((trigger) => {
     trigger.addEventListener("click", () => {
       if ((state.meta.pendingImportKind || state.meta.importKind) !== "image") {
@@ -3757,6 +4483,12 @@ function wireEvents() {
   });
   elements.normalizeWavesInput.addEventListener("change", (event) => {
     updateSurfaceSetting("normalizeCombinedHeight", event.target.checked);
+  });
+  elements.clearWaveSelectionButton.addEventListener("click", () => {
+    state.ui.selectedWaveSourceIds = [];
+    setSelectedHelperDescriptor(null);
+    state.ui.status = "Cleared wave source selection.";
+    syncWaveUiOnly();
   });
 
   const applyImageThreshold = (value) => {
@@ -3888,6 +4620,12 @@ function wireEvents() {
     state.ui.status = "Applied trace region changes.";
     syncView();
   });
+  elements.finalizeTraceButton.addEventListener("click", () => {
+    if (!state.meta.imageTraceCandidates?.length) {
+      return;
+    }
+    finalizeTraceSelection();
+  });
   bindPairedControl(elements.svgSamplesInput, elements.svgSamplesNumber, (value) => {
     state.importSettings.curveSamples = Number(value);
     if (state.meta.pendingImportFile && state.meta.pendingImportKind === "vector") {
@@ -3933,6 +4671,18 @@ function wireEvents() {
   bindPairedControl(elements.resolutionInput, elements.resolutionNumber, (value) => {
     updateSurfaceSetting("resolution", Number(value));
   });
+  elements.previewQualityLowButton.addEventListener("click", () => {
+    state.ui.previewQuality = "low";
+    syncView();
+  });
+  elements.previewQualityMediumButton.addEventListener("click", () => {
+    state.ui.previewQuality = "medium";
+    syncView();
+  });
+  elements.previewQualityHighButton.addEventListener("click", () => {
+    state.ui.previewQuality = "high";
+    syncView();
+  });
   bindPairedControl(elements.heightScaleInput, elements.heightScaleNumber, (value) => {
     updateSurfaceSetting("heightScale", Number(value));
   }, (value) => Number(value).toFixed(2));
@@ -3953,9 +4703,6 @@ function wireEvents() {
   });
   elements.woodToggleInput.addEventListener("change", (event) => {
     updateSurfaceSetting("woodEnabled", event.target.checked);
-  });
-  elements.speciesSelect.addEventListener("change", (event) => {
-    updateSurfaceSetting("species", event.target.value);
   });
   bindPairedControl(elements.grainScaleInput, elements.grainScaleNumber, (value) => {
     updateSurfaceSetting("grainScale", Number(value));
@@ -4061,10 +4808,10 @@ function wireEvents() {
   });
 
   elements.exportStlButton.addEventListener("click", () => {
-    exportStlMesh(buildExportQuads(state, currentSurfaceGrid));
+    exportStlMesh(buildExportQuads(state, currentSurfaceGrid), state);
   });
   elements.exportObjButton.addEventListener("click", () => {
-    exportObjMesh(buildExportQuads(state, currentSurfaceGrid));
+    exportObjMesh(buildExportQuads(state, currentSurfaceGrid), state);
   });
   elements.exportJsonButton.addEventListener("click", () => {
     exportSurfaceJson(buildExportQuads(state, currentSurfaceGrid), state);
@@ -4096,10 +4843,10 @@ function wireEvents() {
   });
 }
 
-populateSpeciesSelects();
 state.ui.theme = getPreferredTheme();
 initThree();
 initFloatingProfileCard();
+initSidebarSplitter();
 initCollapsiblePanels();
 wireEvents();
 systemThemeMedia.addEventListener("change", () => {

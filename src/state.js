@@ -51,6 +51,8 @@ function createDefaultSources() {
       decay: 0.018,
       reach: 92,
       continuation: "damped",
+      locked: false,
+      hidden: false,
       points: [{ x: -38, y: 18 }],
     },
     {
@@ -64,6 +66,8 @@ function createDefaultSources() {
       decay: 0.01,
       reach: 110,
       continuation: "sustain",
+      locked: false,
+      hidden: false,
       points: [
         { x: -12, y: -28 },
         { x: 42, y: 30 },
@@ -138,7 +142,10 @@ export function createDefaultState() {
       theme: "light",
       followSystemTheme: true,
       imagePreviewModalOpen: false,
+      imageAdvancedOpen: false,
+      previewQuality: "medium",
       previewUnits: "mm",
+      sidebarWidth: 430,
     },
     meta: {
       importName: "Sample profile",
@@ -159,6 +166,7 @@ export function createDefaultState() {
         modes: {},
       },
       hoveredTraceId: null,
+      hoveredLoopId: null,
       imageTraceDirty: false,
       imageTraceRevision: 0,
       imageTracePreview: null,
@@ -194,6 +202,8 @@ export function createSource(type, pointSet, count) {
     decay: 0.014,
     reach: 80,
     continuation: "damped",
+    locked: false,
+    hidden: false,
     points: pointSet,
   };
 }

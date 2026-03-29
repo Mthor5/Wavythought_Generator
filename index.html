@@ -39,6 +39,24 @@
 
         <section class="panel">
           <div class="panel-heading">
+            <h2>Project</h2>
+            <div class="button-row">
+              <button id="saveProjectButton" class="ghost-button" type="button">Save Project</button>
+              <button id="openProjectButton" class="ghost-button" type="button">Open Project</button>
+            </div>
+          </div>
+          <input id="openProjectInput" type="file" accept=".json,application/json" class="is-hidden" />
+          <div class="control-grid project-summary-grid">
+            <p id="projectFileSummary" class="status-text">File: Sample profile</p>
+            <p id="projectUnitsSummary" class="status-text">Working units: mm | Source units: mm</p>
+            <p id="projectBoundsSummary" class="status-text">BBox: 150.00 x 150.00 x 0.00 mm</p>
+            <p id="projectRegionSummary" class="status-text">Interior regions: 2</p>
+            <p id="projectSourceSummary" class="status-text">Wave sources: 2</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
             <h2>Profile Input</h2>
             <button id="loadSampleButton" class="ghost-button">Load Sample</button>
           </div>
@@ -57,6 +75,15 @@
           </div>
 
           <div id="imageImportOptions" class="control-grid">
+            <label class="control">
+              <span>Trace preset</span>
+              <div class="segmented-control">
+                <button id="tracePresetLogoButton" class="ghost-button" type="button">Logo</button>
+                <button id="tracePresetLineArtButton" class="ghost-button" type="button">Line Art</button>
+                <button id="tracePresetPhotoButton" class="ghost-button" type="button">Photo</button>
+              </div>
+            </label>
+
             <label class="control">
               <span>Image import method</span>
               <div class="segmented-control">
@@ -108,6 +135,11 @@
               </div>
             </label>
 
+            <div class="button-row">
+              <button id="toggleImageAdvancedButton" class="ghost-button compact-action-button" type="button">Show Advanced</button>
+            </div>
+
+            <div id="imageAdvancedControls" class="control-grid is-hidden">
             <label id="segmentationMethodSettings" class="control is-hidden">
               <span>Color merge tolerance</span>
               <div class="value-control">
@@ -144,6 +176,7 @@
               <input id="invertImageInput" type="checkbox" />
               <span>Invert image trace</span>
             </label>
+            </div>
 
             <div class="button-row">
               <button id="retraceImageButton" class="ghost-button" type="button">Retrace Image</button>
@@ -209,7 +242,10 @@
           <div id="imageTracePanel" class="control-grid is-hidden">
             <div class="panel-heading compact-heading">
               <h3>Trace Regions</h3>
-              <button id="applyTraceRegionsButton" class="ghost-button" type="button">Apply Regions</button>
+              <div class="button-row">
+                <button id="applyTraceRegionsButton" class="ghost-button compact-action-button" type="button">Apply Regions</button>
+                <button id="finalizeTraceButton" class="ghost-button compact-action-button" type="button">Finalize Trace</button>
+              </div>
             </div>
             <p class="status-text">
               The largest traced region drives the surface. Set each other region to add, subtract, or ignore.
@@ -233,6 +269,15 @@
               <div class="value-control">
                 <input id="resolutionInput" type="range" min="48" max="180" value="120" />
                 <input id="resolutionNumber" type="number" min="48" max="180" step="1" value="120" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Preview quality</span>
+              <div class="segmented-control">
+                <button id="previewQualityLowButton" class="ghost-button" type="button">Low</button>
+                <button id="previewQualityMediumButton" class="ghost-button is-active" type="button">Medium</button>
+                <button id="previewQualityHighButton" class="ghost-button" type="button">High</button>
               </div>
             </label>
 
@@ -316,6 +361,16 @@
             </div>
           </article>
 
+          <article class="source-card wave-settings-card">
+            <header>
+              <div>
+                <h3>Selection</h3>
+                <p id="waveSelectionSummary">Select a wave source to edit its settings.</p>
+              </div>
+              <button id="clearWaveSelectionButton" class="ghost-button compact-action-button" type="button">Done Editing</button>
+            </header>
+          </article>
+
           <article id="sharedWaveSettingsPanel" class="source-card is-idle wave-settings-card">
             <header>
               <div>
@@ -394,11 +449,6 @@
             </label>
 
             <label class="control">
-              <span>Base species</span>
-              <select id="speciesSelect"></select>
-            </label>
-
-            <label class="control">
               <span>Grain scale</span>
               <div class="value-control">
                 <input id="grainScaleInput" type="range" min="0.5" max="20" step="0.1" value="12" />
@@ -436,7 +486,7 @@
             <h3>Interior Region Materials</h3>
           </div>
           <p class="status-text">
-            Interior regions only affect material breaks and wood species.
+            Base Surface and interior regions are assigned here. Hover a region row to identify it, then pick the species checkbox for that row.
           </p>
           <div id="regionList" class="stack-list"></div>
         </section>
@@ -519,12 +569,24 @@
             <button id="exportJsonButton">Export Surface JSON</button>
           </div>
 
+          <p id="exportUnitsStatus" class="status-text">
+            Exported values follow the current preview units.
+          </p>
+
           <p class="status-text">
             STL and OBJ export the V1 surface mesh. IGES is deferred until the
             wave field is fit to a CAD-ready surface representation.
           </p>
         </section>
       </aside>
+
+      <div
+        id="sidebarSplitter"
+        class="sidebar-splitter"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+      ></div>
 
       <main class="workspace">
         <section class="viewport-card surface-card">
@@ -592,6 +654,15 @@
 
           <div class="modal-settings-column">
             <div class="control">
+              <span>Trace preset</span>
+              <div class="segmented-control">
+                <button id="modalTracePresetLogoButton" class="ghost-button" type="button">Logo</button>
+                <button id="modalTracePresetLineArtButton" class="ghost-button" type="button">Line Art</button>
+                <button id="modalTracePresetPhotoButton" class="ghost-button" type="button">Photo</button>
+              </div>
+            </div>
+
+            <div class="control">
               <span>Image import method</span>
               <div class="segmented-control">
                 <button id="modalImageImportModeThresholdButton" class="ghost-button is-active" type="button">Threshold</button>
@@ -654,6 +725,11 @@
               </div>
             </label>
 
+            <div class="button-row">
+              <button id="modalToggleImageAdvancedButton" class="ghost-button compact-action-button" type="button">Show Advanced</button>
+            </div>
+
+            <div id="modalImageAdvancedControls" class="control-grid is-hidden">
             <label class="control">
               <span>Min region area (%)</span>
               <div class="value-control">
@@ -682,6 +758,7 @@
               <input id="modalInvertImageInput" type="checkbox" />
               <span>Invert image trace</span>
             </label>
+            </div>
 
             <div class="button-row">
               <button id="modalRetraceImageButton" class="ghost-button" type="button">Retrace Image</button>
