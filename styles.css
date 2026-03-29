@@ -206,11 +206,21 @@ input[type="number"] {
   color: var(--text);
 }
 
+select option {
+  background: #fffaf6;
+  color: #1f1b1f;
+}
+
 body.lights-off select,
 body.lights-off input[type="number"],
 body.lights-off input[type="file"] {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.16);
+  color: #fdfcfc;
+}
+
+body.lights-off select option {
+  background: #241d2c;
   color: #fdfcfc;
 }
 
@@ -570,6 +580,19 @@ body.lights-off .segmented-control .ghost-button.is-active {
   display: grid;
   gap: 0.7rem;
   margin-top: 0.8rem;
+}
+
+.source-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.source-select-control {
+  margin-top: 0;
 }
 
 .source-card,

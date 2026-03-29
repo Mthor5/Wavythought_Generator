@@ -107,12 +107,18 @@ const elements = {
   heightScaleNumber: document.getElementById("heightScaleNumber"),
   edgeFadeInput: document.getElementById("edgeFadeInput"),
   edgeFadeNumber: document.getElementById("edgeFadeNumber"),
+  internalEdgeFadeInput: document.getElementById("internalEdgeFadeInput"),
+  internalEdgeFadeNumber: document.getElementById("internalEdgeFadeNumber"),
   edgeFadeAllInput: document.getElementById("edgeFadeAllInput"),
   showSurfaceResolutionInput: document.getElementById("showSurfaceResolutionInput"),
   woodToggleInput: document.getElementById("woodToggleInput"),
   speciesSelect: document.getElementById("speciesSelect"),
   grainScaleInput: document.getElementById("grainScaleInput"),
   grainScaleNumber: document.getElementById("grainScaleNumber"),
+  grainNoiseInput: document.getElementById("grainNoiseInput"),
+  grainNoiseNumber: document.getElementById("grainNoiseNumber"),
+  grainLayerSizeInput: document.getElementById("grainLayerSizeInput"),
+  grainLayerSizeNumber: document.getElementById("grainLayerSizeNumber"),
   grainAxisXButton: document.getElementById("grainAxisXButton"),
   grainAxisYButton: document.getElementById("grainAxisYButton"),
   grainAxisZButton: document.getElementById("grainAxisZButton"),
@@ -121,6 +127,22 @@ const elements = {
   addPointSourceButton: document.getElementById("addPointSourceButton"),
   addCurveSourceButton: document.getElementById("addCurveSourceButton"),
   sourceModeStatus: document.getElementById("sourceModeStatus"),
+  sharedWaveSettingsPanel: document.getElementById("sharedWaveSettingsPanel"),
+  sharedWaveSettingsStatus: document.getElementById("sharedWaveSettingsStatus"),
+  sharedAmplitudeInput: document.getElementById("sharedAmplitudeInput"),
+  sharedAmplitudeNumber: document.getElementById("sharedAmplitudeNumber"),
+  sharedFrequencyInput: document.getElementById("sharedFrequencyInput"),
+  sharedFrequencyNumber: document.getElementById("sharedFrequencyNumber"),
+  sharedPhaseInput: document.getElementById("sharedPhaseInput"),
+  sharedPhaseNumber: document.getElementById("sharedPhaseNumber"),
+  sharedDecayInput: document.getElementById("sharedDecayInput"),
+  sharedDecayNumber: document.getElementById("sharedDecayNumber"),
+  sharedReachInput: document.getElementById("sharedReachInput"),
+  sharedReachNumber: document.getElementById("sharedReachNumber"),
+  sharedContinuationSelect: document.getElementById("sharedContinuationSelect"),
+  sharedOperationSelect: document.getElementById("sharedOperationSelect"),
+  normalizeWavesInput: document.getElementById("normalizeWavesInput"),
+  regionWaveSourceList: document.getElementById("regionWaveSourceList"),
   sourceList: document.getElementById("sourceList"),
   regionList: document.getElementById("regionList"),
   exportStlButton: document.getElementById("exportStlButton"),
@@ -850,6 +872,109 @@ function preserveLoopSpecies(nextLoops) {
   }));
 }
 
+function createRegionWaveSource(loop) {
+  const source = createSource(
+    "curve",
+    loop.points.map((point) => ({ ...point })),
+    state.sources.filter((item) => item.type === "region").length + 1,
+  );
+  source.type = "region";
+  source.label = `${loop.label} Wave`;
+  source.regionLoopId = loop.id;
+  source.amplitude = 0.55;
+  source.frequency = 0.03;
+  source.decay = 0.018;
+  source.reach = 120;
+  source.continuation = "sustain";
+  return source;
+}
+
+function syncRegionWaveSourcesToLoops() {
+  state.sources = state.sources.filter((source) => {
+    if (source.type !== "region") {
+      return true;
+    }
+    const loop = state.loops.find((item) => item.id === source.regionLoopId && item.role === "inner");
+    if (!loop) {
+      return false;
+    }
+    source.points = loop.points.map((point) => ({ ...point }));
+    source.label = `${loop.label} Wave`;
+    return true;
+  });
+}
+
+function syncSelectedWaveSourceIds() {
+  const validIds = new Set(state.sources.map((source) => source.id));
+  state.ui.selectedWaveSourceIds = state.ui.selectedWaveSourceIds.filter((id) => validIds.has(id));
+}
+
+function getSelectedWaveSources() {
+  syncSelectedWaveSourceIds();
+  return state.sources.filter((source) => state.ui.selectedWaveSourceIds.includes(source.id));
+}
+
+function getPrimarySelectedWaveSource() {
+  return getSelectedWaveSources()[0] || null;
+}
+
+function isWaveSourceSelected(sourceId) {
+  return state.ui.selectedWaveSourceIds.includes(sourceId);
+}
+
+function toggleWaveSourceSelection(sourceId, selected) {
+  const next = new Set(state.ui.selectedWaveSourceIds);
+  if (selected) {
+    next.add(sourceId);
+  } else {
+    next.delete(sourceId);
+  }
+  state.ui.selectedWaveSourceIds = [...next];
+}
+
+function applySharedWaveSetting(field, value) {
+  getSelectedWaveSources().forEach((source) => {
+    source[field] = value;
+  });
+  syncStatus();
+  syncView();
+}
+
+function syncSharedWaveSettingsPanel() {
+  const primary = getPrimarySelectedWaveSource();
+  const selectedCount = getSelectedWaveSources().length;
+  const hasSelection = Boolean(primary);
+  elements.sharedWaveSettingsPanel.classList.toggle("is-hidden", !hasSelection);
+  if (!hasSelection) {
+    elements.sharedWaveSettingsStatus.textContent = "Select a wave source to edit its settings.";
+    return;
+  }
+
+  elements.sharedWaveSettingsStatus.textContent =
+    selectedCount === 1
+      ? `Editing ${primary.label}.`
+      : `Editing ${selectedCount} selected wave sources from ${primary.label}.`;
+
+  setPairedValue(elements.sharedAmplitudeInput, elements.sharedAmplitudeNumber, primary.amplitude, (value) =>
+    Number(value).toFixed(3),
+  );
+  setPairedValue(elements.sharedFrequencyInput, elements.sharedFrequencyNumber, primary.frequency, (value) =>
+    Number(value).toFixed(3),
+  );
+  setPairedValue(elements.sharedPhaseInput, elements.sharedPhaseNumber, primary.phase, (value) =>
+    Number(value).toFixed(3),
+  );
+  setPairedValue(elements.sharedDecayInput, elements.sharedDecayNumber, primary.decay, (value) =>
+    Number(value).toFixed(3),
+  );
+  setPairedValue(elements.sharedReachInput, elements.sharedReachNumber, primary.reach, (value) =>
+    Number(value).toFixed(3),
+  );
+  elements.sharedContinuationSelect.value = primary.continuation;
+  elements.sharedOperationSelect.value = primary.operation;
+  elements.normalizeWavesInput.checked = state.surface.normalizeCombinedHeight;
+}
+
 function applyImageTraceSelection(selection = state.meta.imageTraceSelection) {
   const normalizedSelection = sanitizeTraceSelection(
     state.meta.imageTraceCandidates,
@@ -1202,6 +1327,21 @@ function update3DHelperObjects() {
       return;
     }
 
+    if (source.type === "region") {
+      const regionPreviewPoints = sampleCurveSourcePolyline(source.points, 72)
+        .map((point) => toSurfaceScenePoint(point, lineOffset));
+      if (regionPreviewPoints.length) {
+        regionPreviewPoints.push(regionPreviewPoints[0].clone());
+      }
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(regionPreviewPoints),
+        lineMaterial,
+      );
+      line.renderOrder = 11;
+      helperGroup.add(line);
+      return;
+    }
+
     const controlPoints = source.points.map((point) => toSurfaceScenePoint(point, handleOffset));
     const curvePreviewPoints = sampleCurveSourcePolyline(source.points, 56)
       .map((point) => toSurfaceScenePoint(point, lineOffset));
@@ -1351,6 +1491,8 @@ function buildSurfaceMaterial(colorMapTexture, alphaMapTexture) {
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uGrainScale = { value: state.surface.grainScale };
+    shader.uniforms.uGrainNoise = { value: state.surface.grainNoise };
+    shader.uniforms.uGrainLayerSize = { value: state.surface.grainLayerSize };
     shader.uniforms.uWorldPerSourceUnit = { value: Math.max(getWorldUnitsPerSourceUnit(), 1e-4) };
     shader.uniforms.uSourceWidth = { value: Math.max(state.meta.sourceBounds?.width || 1, 1) };
     shader.uniforms.uSourceHeight = { value: Math.max(state.meta.sourceBounds?.height || 1, 1) };
@@ -1379,6 +1521,8 @@ function buildSurfaceMaterial(colorMapTexture, alphaMapTexture) {
         `#include <common>
 varying vec3 vLocalPosition;
 uniform float uGrainScale;
+uniform float uGrainNoise;
+uniform float uGrainLayerSize;
 uniform float uWorldPerSourceUnit;
 uniform float uSourceWidth;
 uniform float uSourceHeight;
@@ -1389,7 +1533,9 @@ uniform int uGrainAxis;
         "#include <map_fragment>",
         `#include <map_fragment>
 vec3 baseTone = diffuseColor.rgb;
-float grainScale = clamp(uGrainScale, 0.2, 4.0);
+float grainScale = clamp(uGrainScale, 0.2, 20.0);
+float grainNoise = clamp(uGrainNoise, 0.0, 3.0);
+float grainLayerSize = clamp(uGrainLayerSize, 0.15, 8.0);
 float sourceScale = max(uWorldPerSourceUnit, 0.0001);
 vec3 sourcePos = vLocalPosition / sourceScale;
 vec2 boardPos = sourcePos.xy;
@@ -1415,26 +1561,34 @@ if (uGrainAxis == 0) {
   crossCoord = sourcePos.x;
 }
 
-float ringSpacing = max(3.0, 14.0 / grainScale);
-float longWave = sin(boardPos.x * 0.035 + boardPos.y * 0.012) * 0.8;
-float shortWave = sin(boardPos.y * 0.075 - boardPos.x * 0.024) * 0.32;
-float radial = length(ringVector) + longWave + shortWave;
+float ringSpacing = max(1.25, 14.0 / grainScale);
+float longWave = sin(boardPos.x * 0.035 + boardPos.y * 0.012) * (1.6 * grainNoise);
+float shortWave = sin(boardPos.y * 0.075 - boardPos.x * 0.024) * (0.85 * grainNoise);
+float flutter = sin(boardPos.x * 0.11 + sin(boardPos.y * 0.06) * 1.7) * (0.55 * grainNoise);
+float crackle = sin(boardPos.x * 0.19 - boardPos.y * 0.14 + sin(boardPos.y * 0.08) * 2.4) * (0.28 * grainNoise * grainNoise);
+float radial = length(ringVector) + longWave + shortWave + flutter + crackle;
+float layerNoiseA = sin(radial * 0.11 + boardPos.x * 0.045 + boardPos.y * 0.018);
+float layerNoiseB = sin(radial * 0.047 - boardPos.y * 0.053 + boardPos.x * 0.021);
+float layerVariance = (layerNoiseA * 0.65 + layerNoiseB * 0.35) * grainLayerSize * 0.45;
 float rings = 0.5 + 0.5 * sin((radial / ringSpacing) * 6.28318530718);
 
-float fibers = 0.5 + 0.5 * sin(fiberCoord * 0.16 * grainScale + sin(crossCoord * 0.03) * 1.8);
-float pores = 0.5 + 0.5 * sin(crossCoord * 0.055 + boardPos.y * 0.022 * grainScale);
-float grainMask = smoothstep(0.18, 0.82, rings);
+float fibers = 0.5 + 0.5 * sin(fiberCoord * 0.16 * grainScale + sin(crossCoord * 0.03) * (1.8 + grainNoise * 2.2));
+float pores = 0.5 + 0.5 * sin(crossCoord * 0.055 + boardPos.y * 0.022 * grainScale + grainNoise * 0.8);
+float bandCenter = 0.5 + layerVariance * 0.18;
+float bandWidth = max(0.06, 0.32 - abs(layerVariance) * 0.11 - grainNoise * 0.035);
+float grainMask = smoothstep(bandCenter - bandWidth, bandCenter + bandWidth, rings);
 
 vec3 lightTone = mix(baseTone, vec3(1.0), 0.12);
 vec3 darkTone = mix(baseTone, vec3(0.08, 0.06, 0.04), 0.34);
 vec3 ringTone = mix(darkTone, lightTone, grainMask);
-ringTone *= mix(0.95, 1.05, fibers * 0.16 + pores * 0.1);
-diffuseColor.rgb = mix(baseTone, ringTone, 0.72);
+ringTone *= mix(0.9, 1.1, fibers * 0.22 + pores * 0.16 + grainNoise * 0.08);
+diffuseColor.rgb = mix(baseTone, ringTone, clamp(0.64 + grainNoise * 0.08, 0.0, 0.92));
 `,
       );
   };
 
-  material.customProgramCacheKey = () => `wood-cylinder-${state.surface.grainAxis}-${state.surface.grainScale.toFixed(2)}`;
+  material.customProgramCacheKey = () =>
+    `wood-cylinder-${state.surface.grainAxis}-${state.surface.grainScale.toFixed(2)}-${state.surface.grainNoise.toFixed(2)}-${state.surface.grainLayerSize.toFixed(2)}`;
   return material;
 }
 
@@ -1637,6 +1791,7 @@ function updateThreeSurface() {
   }
 
   currentSurfaceGrid = buildSurfaceGrid(state);
+  state.meta.waveNormalizationFactor = currentSurfaceGrid.normalizationFactor || 1;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
     "position",
@@ -1765,7 +1920,7 @@ function renderProfileCanvas() {
       profileContext.lineWidth = 2;
       profileContext.fill();
       profileContext.stroke();
-    } else {
+    } else if (source.type === "curve") {
       const curveDescriptor = { sourceId: source.id, kind: "curveCenter" };
       const curveColors = isSelectedDescriptor(curveDescriptor) ? HANDLE_COLORS.selected : HANDLE_COLORS.curve;
       const curvePreviewPoints = sampleCurveSourcePolyline(source.points, 56);
@@ -1803,6 +1958,27 @@ function renderProfileCanvas() {
       profileContext.lineWidth = 1.8;
       profileContext.fill();
       profileContext.stroke();
+    }
+    else {
+      const regionPreviewPoints = sampleCurveSourcePolyline(source.points, 72);
+      profileContext.strokeStyle = HANDLE_COLORS.curve.fill;
+      profileContext.lineWidth = 2.2;
+      profileContext.beginPath();
+      regionPreviewPoints.forEach((point, index) => {
+        const canvasPoint = toCanvasPoint(point, bounds, width, height);
+        if (index === 0) {
+          profileContext.moveTo(canvasPoint.x, canvasPoint.y);
+        } else {
+          profileContext.lineTo(canvasPoint.x, canvasPoint.y);
+        }
+      });
+      if (regionPreviewPoints.length) {
+        const start = toCanvasPoint(regionPreviewPoints[0], bounds, width, height);
+        profileContext.lineTo(start.x, start.y);
+      }
+      profileContext.setLineDash([10, 6]);
+      profileContext.stroke();
+      profileContext.setLineDash([]);
     }
   });
 
@@ -1854,6 +2030,9 @@ function pick2DSourceHandle(canvasPoint) {
   let best = null;
 
   state.sources.forEach((source) => {
+    if (source.type === "region") {
+      return;
+    }
     source.points.forEach((point, pointIndex) => {
       const screenPoint = toCanvasPoint(point, bounds, elements.profileCanvas.width, elements.profileCanvas.height);
       const distance = Math.hypot(canvasPoint.x - screenPoint.x, canvasPoint.y - screenPoint.y);
@@ -2104,138 +2283,114 @@ function clearSurfaceDrag(event) {
   }
 }
 
-function renderRangeControl(source, field, label, min, max, step) {
-  const value = Number(source[field]);
-  const effectiveMin = Number.isFinite(value) ? Math.min(min, value) : min;
-  const effectiveMax = Number.isFinite(value) ? Math.max(max, value) : max;
-
-  return `
-    <label class="control">
-      <span>${label}</span>
-      <div class="value-control">
-        <input
-          type="range"
-          min="${effectiveMin}"
-          max="${effectiveMax}"
-          step="${step}"
-          value="${source[field]}"
-          data-source-id="${source.id}"
-          data-field="${field}"
-        />
-        <input
-          type="number"
-          min="${effectiveMin}"
-          max="${effectiveMax}"
-          step="${step}"
-          value="${source[field]}"
-          data-source-id="${source.id}"
-          data-field="${field}"
-        />
-      </div>
-    </label>
-  `;
-}
-
-function handleSourceInput(event) {
-  const { sourceId, field } = event.target.dataset;
-  const source = state.sources.find((item) => item.id === sourceId);
-  if (!source) {
+function renderRegionWaveSourceList() {
+  const innerLoops = state.loops.filter((loop) => loop.role === "inner");
+  if (!innerLoops.length) {
+    elements.regionWaveSourceList.innerHTML = '<p class="status-text">No interior regions available for region wave sources.</p>';
     return;
   }
 
-  if (event.target.type === "range" || event.target.type === "number") {
-    const control = event.target.closest(".value-control");
-    if (control) {
-      const rangeInput = control.querySelector('input[type="range"]');
-      const numberInput = control.querySelector('input[type="number"]');
-      if (rangeInput && numberInput) {
-        if (event.target.type === "number" && event.type !== "change") {
-          return;
+  elements.regionWaveSourceList.innerHTML = "";
+  innerLoops.forEach((loop) => {
+    const source = state.sources.find((item) => item.type === "region" && item.regionLoopId === loop.id);
+    const card = document.createElement("article");
+    card.className = "source-card";
+    card.innerHTML = `
+      <header>
+        <div>
+          <h3>${loop.label}</h3>
+          <p>${source ? "Closed-loop region wave source" : "Use this interior region as a closed-loop wave source."}</p>
+        </div>
+      </header>
+      <div class="source-card-actions">
+        ${
+          source
+            ? `
+              <label class="checkbox-control source-select-control">
+                <input
+                  type="checkbox"
+                  data-action="select-wave-source"
+                  data-source-id="${source.id}"
+                  ${isWaveSourceSelected(source.id) ? "checked" : ""}
+                />
+                <span>Select for shared settings</span>
+              </label>
+            `
+            : '<span class="status-text">Enable this region to make it editable in the shared wave settings panel.</span>'
         }
-        if (event.target.type === "number") {
-          expandPairedBounds(rangeInput, numberInput, event.target.value);
-        }
-        const nextValue = setPairedValue(rangeInput, numberInput, event.target.value, (value) =>
-          Number(value).toFixed(3),
-        );
-        source[field] = nextValue;
+        <button
+          class="ghost-button"
+          data-action="toggle-region-wave"
+          data-loop-id="${loop.id}"
+          type="button"
+        >
+          ${source ? "Remove Wave" : "Use as Wave"}
+        </button>
+      </div>
+    `;
+    card.querySelector('[data-action="toggle-region-wave"]').addEventListener("click", () => {
+      const existingIndex = state.sources.findIndex(
+        (item) => item.type === "region" && item.regionLoopId === loop.id,
+      );
+      if (existingIndex >= 0) {
+        const removed = state.sources[existingIndex];
+        state.sources.splice(existingIndex, 1);
+        toggleWaveSourceSelection(removed.id, false);
+        state.ui.status = `Removed ${removed.label}.`;
       } else {
-        source[field] = clampToInput(event.target, event.target.value);
+        const nextSource = createRegionWaveSource(loop);
+        state.sources.push(nextSource);
+        toggleWaveSourceSelection(nextSource.id, true);
+        state.ui.status = `Added ${loop.label} as a wave source.`;
       }
-    } else {
-      source[field] = clampToInput(event.target, event.target.value);
-    }
-  } else {
-    source[field] = event.target.value;
-  }
-
-  syncStatus();
-  renderProfileCanvas();
-  updateThreeSurface();
+      syncView();
+    });
+    card.querySelectorAll('[data-action="select-wave-source"]').forEach((input) => {
+      input.addEventListener("change", (event) => {
+        toggleWaveSourceSelection(event.target.dataset.sourceId, event.target.checked);
+        syncView();
+      });
+    });
+    elements.regionWaveSourceList.append(card);
+  });
 }
 
 function renderSourceList() {
   elements.sourceList.innerHTML = "";
-  state.sources.forEach((source) => {
+  state.sources.filter((source) => source.type !== "region").forEach((source) => {
+    const sourceDescription =
+      source.type === "point"
+        ? "Radial wave source"
+        : "Distance-to-curve wave source";
     const card = document.createElement("article");
     card.className = "source-card";
     card.innerHTML = `
       <header>
         <div>
           <h3>${source.label}</h3>
-          <p>${source.type === "point" ? "Radial wave source" : "Distance-to-curve wave source"}</p>
+          <p>${sourceDescription}</p>
         </div>
         <button data-action="remove-source" data-source-id="${source.id}" class="ghost-button">Remove</button>
       </header>
-      <div class="inline-grid">
-        ${renderRangeControl(source, "amplitude", "Amplitude", 0, 2, 0.01)}
-        ${renderRangeControl(source, "frequency", "Frequency", 0.002, 0.12, 0.001)}
-        ${renderRangeControl(source, "phase", "Phase", 0, 6.28, 0.01)}
-        ${renderRangeControl(source, "decay", "Decay", 0, 0.08, 0.001)}
-        ${renderRangeControl(source, "reach", "Reach", 5, 200, 1)}
-        <label class="control">
-          <span>Continuation</span>
-          <select data-source-id="${source.id}" data-field="continuation">
-            ${["damped", "sustain", "clipped"]
-              .map((value) => `<option value="${value}" ${source.continuation === value ? "selected" : ""}>${value}</option>`)
-              .join("")}
-          </select>
-        </label>
-        <label class="control">
-          <span>Combine</span>
-          <select data-source-id="${source.id}" data-field="operation">
-            ${["add", "subtract", "multiply"]
-              .map((value) => `<option value="${value}" ${source.operation === value ? "selected" : ""}>${value}</option>`)
-              .join("")}
-          </select>
+      <div class="source-card-actions">
+        <label class="checkbox-control source-select-control">
+          <input
+            type="checkbox"
+            data-action="select-wave-source"
+            data-source-id="${source.id}"
+            ${isWaveSourceSelected(source.id) ? "checked" : ""}
+          />
+          <span>Select for shared settings</span>
         </label>
       </div>
     `;
     elements.sourceList.append(card);
-
-    card.querySelectorAll('input[type="range"]').forEach((input) => {
-      input.addEventListener("input", handleSourceInput);
+    card.querySelector('[data-action="select-wave-source"]').addEventListener("change", (event) => {
+      toggleWaveSourceSelection(event.target.dataset.sourceId, event.target.checked);
+      syncView();
     });
-    card.querySelectorAll('input[type="number"]').forEach((input) => {
-      input.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter") {
-          return;
-        }
-        event.preventDefault();
-        handleSourceInput({ target: input, type: "change" });
-      });
-      input.addEventListener("blur", () => {
-        const control = input.closest(".value-control");
-        const rangeInput = control?.querySelector('input[type="range"]');
-        if (rangeInput) {
-          resetNumberInputDisplay(rangeInput, input, (value) => Number(value).toFixed(3));
-        }
-      });
-    });
-    card.querySelectorAll("select").forEach((input) => {
-      input.addEventListener("change", handleSourceInput);
-    });
-    card.querySelector("button").addEventListener("click", () => {
+    card.querySelector('[data-action="remove-source"]').addEventListener("click", () => {
+      toggleWaveSourceSelection(source.id, false);
       state.sources = state.sources.filter((item) => item.id !== source.id);
       state.ui.status = `Removed ${source.label}.`;
       syncView();
@@ -2388,12 +2543,18 @@ function syncView() {
   elements.heightScaleNumber.value = String(state.surface.heightScale);
   elements.edgeFadeInput.value = String(state.surface.edgeFade);
   elements.edgeFadeNumber.value = String(state.surface.edgeFade);
+  elements.internalEdgeFadeInput.value = String(state.surface.internalEdgeFade);
+  elements.internalEdgeFadeNumber.value = String(state.surface.internalEdgeFade);
   elements.edgeFadeAllInput.checked = state.surface.edgeFadeAll;
   elements.showSurfaceResolutionInput.checked = state.surface.showResolutionEdges;
   elements.woodToggleInput.checked = state.surface.woodEnabled;
   elements.speciesSelect.value = state.surface.species;
   elements.grainScaleInput.value = String(state.surface.grainScale);
   elements.grainScaleNumber.value = String(state.surface.grainScale);
+  elements.grainNoiseInput.value = String(state.surface.grainNoise);
+  elements.grainNoiseNumber.value = String(state.surface.grainNoise);
+  elements.grainLayerSizeInput.value = String(state.surface.grainLayerSize);
+  elements.grainLayerSizeNumber.value = String(state.surface.grainLayerSize);
   elements.grainAxisXButton.classList.toggle("is-active", state.surface.grainAxis === "x");
   elements.grainAxisYButton.classList.toggle("is-active", state.surface.grainAxis === "y");
   elements.grainAxisZButton.classList.toggle("is-active", state.surface.grainAxis === "z");
@@ -2403,7 +2564,10 @@ function syncView() {
   elements.toggleHelpersButton.textContent = state.ui.show3DHelpers ? "Hide Guides" : "Show Guides";
   syncTheme();
   syncImageTraceControls();
+  syncRegionWaveSourcesToLoops();
+  syncSharedWaveSettingsPanel();
   renderImageTraceList();
+  renderRegionWaveSourceList();
   renderSourceList();
   renderRegionList();
   syncStatus();
@@ -2780,6 +2944,30 @@ function wireEvents() {
       setImagePreviewModalOpen(false);
     }
   });
+  bindPairedControl(elements.sharedAmplitudeInput, elements.sharedAmplitudeNumber, (value) => {
+    applySharedWaveSetting("amplitude", Number(value));
+  });
+  bindPairedControl(elements.sharedFrequencyInput, elements.sharedFrequencyNumber, (value) => {
+    applySharedWaveSetting("frequency", Number(value));
+  });
+  bindPairedControl(elements.sharedPhaseInput, elements.sharedPhaseNumber, (value) => {
+    applySharedWaveSetting("phase", Number(value));
+  });
+  bindPairedControl(elements.sharedDecayInput, elements.sharedDecayNumber, (value) => {
+    applySharedWaveSetting("decay", Number(value));
+  });
+  bindPairedControl(elements.sharedReachInput, elements.sharedReachNumber, (value) => {
+    applySharedWaveSetting("reach", Number(value));
+  });
+  elements.sharedContinuationSelect.addEventListener("change", (event) => {
+    applySharedWaveSetting("continuation", event.target.value);
+  });
+  elements.sharedOperationSelect.addEventListener("change", (event) => {
+    applySharedWaveSetting("operation", event.target.value);
+  });
+  elements.normalizeWavesInput.addEventListener("change", (event) => {
+    updateSurfaceSetting("normalizeCombinedHeight", event.target.checked);
+  });
 
   const applyImageThreshold = (value) => {
     state.importSettings.imageThreshold = Number(value);
@@ -2906,6 +3094,9 @@ function wireEvents() {
   bindPairedControl(elements.edgeFadeInput, elements.edgeFadeNumber, (value) => {
     updateSurfaceSetting("edgeFade", Number(value));
   }, (value) => Number(value).toFixed(2));
+  bindPairedControl(elements.internalEdgeFadeInput, elements.internalEdgeFadeNumber, (value) => {
+    updateSurfaceSetting("internalEdgeFade", Number(value));
+  }, (value) => Number(value).toFixed(2));
   elements.edgeFadeAllInput.addEventListener("change", (event) => {
     updateSurfaceSetting("edgeFadeAll", event.target.checked);
   });
@@ -2920,6 +3111,12 @@ function wireEvents() {
   });
   bindPairedControl(elements.grainScaleInput, elements.grainScaleNumber, (value) => {
     updateSurfaceSetting("grainScale", Number(value));
+  }, (value) => Number(value).toFixed(2));
+  bindPairedControl(elements.grainNoiseInput, elements.grainNoiseNumber, (value) => {
+    updateSurfaceSetting("grainNoise", Number(value));
+  }, (value) => Number(value).toFixed(2));
+  bindPairedControl(elements.grainLayerSizeInput, elements.grainLayerSizeNumber, (value) => {
+    updateSurfaceSetting("grainLayerSize", Number(value));
   }, (value) => Number(value).toFixed(2));
   elements.grainAxisXButton.addEventListener("click", () => {
     updateSurfaceSetting("grainAxis", "x");

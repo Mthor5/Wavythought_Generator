@@ -222,19 +222,6 @@
               </div>
             </label>
 
-            <label class="control">
-              <span>Edge fade distance</span>
-              <div class="value-control">
-                <input id="edgeFadeInput" type="range" min="0" max="40" step="0.5" value="12" />
-                <input id="edgeFadeNumber" type="number" min="0" max="40" step="0.5" value="12" />
-              </div>
-            </label>
-
-            <label class="control checkbox-control">
-              <input id="edgeFadeAllInput" type="checkbox" />
-              <span>Fade from all edges</span>
-            </label>
-
           </div>
         </section>
 
@@ -251,18 +238,103 @@
             Click Add Point or Add Curve, then place the source in the 2D view.
           </p>
 
-          <div id="sourceList" class="stack-list"></div>
-        </section>
+          <article class="source-card">
+            <header>
+              <div>
+                <h3>Edge Fade</h3>
+                <p>Control perimeter fade and optional internal edge fade.</p>
+              </div>
+            </header>
+            <div class="inline-grid">
+              <label class="control">
+                <span>Perimeter fade distance</span>
+                <div class="value-control">
+                  <input id="edgeFadeInput" type="range" min="0" max="40" step="0.5" value="12" />
+                  <input id="edgeFadeNumber" type="number" min="0" max="40" step="0.5" value="12" />
+                </div>
+              </label>
+              <label class="control">
+                <span>Internal edge fade distance</span>
+                <div class="value-control">
+                  <input id="internalEdgeFadeInput" type="range" min="0" max="40" step="0.5" value="6" />
+                  <input id="internalEdgeFadeNumber" type="number" min="0" max="40" step="0.5" value="6" />
+                </div>
+              </label>
+              <label class="control checkbox-control">
+                <input id="edgeFadeAllInput" type="checkbox" />
+                <span>Fade from all edges</span>
+              </label>
+            </div>
+          </article>
 
-        <section class="panel">
-          <div class="panel-heading">
-            <h2>Regions</h2>
-          </div>
-          <p class="status-text">
-            The largest imported loop drives the surface. Interior loops act as
-            color-break regions for this first visualization pass.
-          </p>
-          <div id="regionList" class="stack-list"></div>
+          <article id="sharedWaveSettingsPanel" class="source-card is-hidden">
+            <header>
+              <div>
+                <h3>Wave Settings</h3>
+                <p id="sharedWaveSettingsStatus">Select a wave source to edit its settings.</p>
+              </div>
+            </header>
+            <div class="inline-grid">
+              <label class="control">
+                <span>Amplitude</span>
+                <div class="value-control">
+                  <input id="sharedAmplitudeInput" type="range" min="0" max="2" step="0.01" value="0.8" />
+                  <input id="sharedAmplitudeNumber" type="number" min="0" max="2" step="0.01" value="0.8" />
+                </div>
+              </label>
+              <label class="control">
+                <span>Frequency</span>
+                <div class="value-control">
+                  <input id="sharedFrequencyInput" type="range" min="0.002" max="0.12" step="0.001" value="0.02" />
+                  <input id="sharedFrequencyNumber" type="number" min="0.002" max="0.12" step="0.001" value="0.02" />
+                </div>
+              </label>
+              <label class="control">
+                <span>Phase</span>
+                <div class="value-control">
+                  <input id="sharedPhaseInput" type="range" min="0" max="6.28" step="0.01" value="0" />
+                  <input id="sharedPhaseNumber" type="number" min="0" max="6.28" step="0.01" value="0" />
+                </div>
+              </label>
+              <label class="control">
+                <span>Decay</span>
+                <div class="value-control">
+                  <input id="sharedDecayInput" type="range" min="0" max="0.08" step="0.001" value="0.014" />
+                  <input id="sharedDecayNumber" type="number" min="0" max="0.08" step="0.001" value="0.014" />
+                </div>
+              </label>
+              <label class="control">
+                <span>Reach</span>
+                <div class="value-control">
+                  <input id="sharedReachInput" type="range" min="5" max="200" step="1" value="80" />
+                  <input id="sharedReachNumber" type="number" min="5" max="200" step="1" value="80" />
+                </div>
+              </label>
+              <label class="control">
+                <span>Continuation</span>
+                <select id="sharedContinuationSelect">
+                  <option value="damped">damped</option>
+                  <option value="sustain">sustain</option>
+                  <option value="clipped">clipped</option>
+                </select>
+              </label>
+              <label class="control">
+                <span>Combine</span>
+                <select id="sharedOperationSelect">
+                  <option value="add">add</option>
+                  <option value="subtract">subtract</option>
+                  <option value="multiply">multiply</option>
+                </select>
+              </label>
+              <label class="control checkbox-control">
+                <input id="normalizeWavesInput" type="checkbox" />
+                <span>Normalize combined height</span>
+              </label>
+            </div>
+          </article>
+
+          <div id="regionWaveSourceList" class="stack-list"></div>
+          <div id="sourceList" class="stack-list"></div>
         </section>
 
         <section class="panel">
@@ -284,8 +356,24 @@
             <label class="control">
               <span>Grain scale</span>
               <div class="value-control">
-                <input id="grainScaleInput" type="range" min="0.5" max="4" step="0.1" value="1.5" />
-                <input id="grainScaleNumber" type="number" min="0.5" max="4" step="0.1" value="1.5" />
+                <input id="grainScaleInput" type="range" min="0.5" max="20" step="0.1" value="12" />
+                <input id="grainScaleNumber" type="number" min="0.5" max="20" step="0.1" value="12" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Grain noise</span>
+              <div class="value-control">
+                <input id="grainNoiseInput" type="range" min="0" max="2" step="0.01" value="1.35" />
+                <input id="grainNoiseNumber" type="number" min="0" max="2" step="0.01" value="1.35" />
+              </div>
+            </label>
+
+            <label class="control">
+              <span>Layer variability</span>
+              <div class="value-control">
+                <input id="grainLayerSizeInput" type="range" min="0.25" max="6" step="0.05" value="4" />
+                <input id="grainLayerSizeNumber" type="number" min="0.25" max="6" step="0.05" value="4" />
               </div>
             </label>
 
@@ -293,11 +381,19 @@
               <span>Grain axis</span>
               <div class="segmented-control">
                 <button id="grainAxisXButton" class="ghost-button" type="button">X</button>
-                <button id="grainAxisYButton" class="ghost-button" type="button">Y</button>
-                <button id="grainAxisZButton" class="ghost-button is-active" type="button">Z</button>
+                <button id="grainAxisYButton" class="ghost-button is-active" type="button">Y</button>
+                <button id="grainAxisZButton" class="ghost-button" type="button">Z</button>
               </div>
             </label>
           </div>
+
+          <div class="panel-heading compact-heading">
+            <h3>Interior Region Materials</h3>
+          </div>
+          <p class="status-text">
+            Interior regions only affect material breaks and wood species.
+          </p>
+          <div id="regionList" class="stack-list"></div>
         </section>
 
         <section class="panel">

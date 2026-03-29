@@ -236,7 +236,11 @@ function sampleSourceValue(source, point) {
   const distance =
     source.type === "point"
       ? Math.hypot(point.x - source.points[0].x, point.y - source.points[0].y)
-      : distanceToPolyline(point, sampleCurveSourcePolyline(source.points), false);
+      : distanceToPolyline(
+          point,
+          sampleCurveSourcePolyline(source.points),
+          source.type === "region",
+        );
 
   const phase = distance * source.frequency * Math.PI * 2 + source.phase;
   const rawWave = Math.sin(phase) * source.amplitude;
@@ -310,6 +314,15 @@ function distanceToSurfaceBoundary(state, point) {
   return boundaryDistances.length ? Math.min(...boundaryDistances) : 0;
 }
 
+function distanceToInternalBoundary(state, point) {
+  const interiorLoops = [
+    ...getSubtractiveSurfaceLoops(state),
+    ...getInteriorBreakLoops(state),
+  ];
+  const boundaryDistances = interiorLoops.map((loop) => distanceToPolyline(point, loop.points, true));
+  return boundaryDistances.length ? Math.min(...boundaryDistances) : Infinity;
+}
+
 function distanceToExteriorBoundary(state, point) {
   const exteriorLoops = [
     ...getExteriorAdditiveSurfaceLoops(state),
@@ -323,7 +336,7 @@ function distanceToExteriorBoundary(state, point) {
   return boundaryDistances.length ? Math.min(...boundaryDistances) : 0;
 }
 
-export function sampleHeight(state, point) {
+function sampleWaveHeightUnit(state, point) {
   if (!pointInsideSurface(state, point)) {
     return 0;
   }
@@ -333,15 +346,27 @@ export function sampleHeight(state, point) {
     accumulated = combineValues(accumulated, sampleSourceValue(source, point), source.operation);
   });
 
-  const edgeDistance = state.surface.edgeFadeAll
-    ? distanceToSurfaceBoundary(state, point)
-    : distanceToExteriorBoundary(state, point);
-  const edgeMask =
+  const exteriorEdgeDistance = distanceToExteriorBoundary(state, point);
+  const exteriorMask =
     state.surface.edgeFade > 0
-      ? smoothstep(0, state.surface.edgeFade, edgeDistance)
+      ? smoothstep(0, state.surface.edgeFade, exteriorEdgeDistance)
+      : 1;
+  const internalEdgeDistance = distanceToInternalBoundary(state, point);
+  const internalMask =
+    state.surface.edgeFadeAll && state.surface.internalEdgeFade > 0 && Number.isFinite(internalEdgeDistance)
+      ? smoothstep(0, state.surface.internalEdgeFade, internalEdgeDistance)
       : 1;
 
-  return accumulated * state.surface.heightScale * edgeMask;
+  return accumulated * exteriorMask * internalMask;
+}
+
+export function sampleHeight(state, point) {
+  const unitHeight = sampleWaveHeightUnit(state, point);
+  const normalizationFactor =
+    state.surface.normalizeCombinedHeight
+      ? Math.max(state.meta?.waveNormalizationFactor || 1, EPSILON)
+      : 1;
+  return (unitHeight * state.surface.heightScale) / normalizationFactor;
 }
 
 export function buildSurfaceGrid(state) {
@@ -353,8 +378,10 @@ export function buildSurfaceGrid(state) {
   const uvs = [];
   const indices = [];
   const vertices = [];
+  const rawHeights = [];
   let minHeight = Infinity;
   let maxHeight = -Infinity;
+  let maxUnitHeight = 0;
 
   for (let yIndex = 0; yIndex <= rows; yIndex += 1) {
     const v = yIndex / rows;
@@ -364,13 +391,26 @@ export function buildSurfaceGrid(state) {
       const x = bounds.minX + bounds.width * u;
       const point = { x, y };
       const inside = pointInsideSurface(state, point);
-      const height = inside ? sampleHeight(state, point) : 0;
-      positions.push(x, y, height);
+      const unitHeight = inside ? sampleWaveHeightUnit(state, point) : 0;
+      rawHeights.push(unitHeight);
+      maxUnitHeight = Math.max(maxUnitHeight, Math.abs(unitHeight));
+      positions.push(x, y, 0);
       uvs.push(u, v);
-      vertices.push({ x, y, z: height, inside });
-      minHeight = Math.min(minHeight, height);
-      maxHeight = Math.max(maxHeight, height);
+      vertices.push({ x, y, z: 0, inside });
     }
+  }
+
+  const normalizationFactor =
+    state.surface.normalizeCombinedHeight && maxUnitHeight > EPSILON
+      ? maxUnitHeight
+      : 1;
+
+  for (let index = 0; index < vertices.length; index += 1) {
+    const height = (rawHeights[index] * state.surface.heightScale) / normalizationFactor;
+    positions[index * 3 + 2] = height;
+    vertices[index].z = height;
+    minHeight = Math.min(minHeight, height);
+    maxHeight = Math.max(maxHeight, height);
   }
 
   for (let row = 0; row < rows; row += 1) {
@@ -391,6 +431,7 @@ export function buildSurfaceGrid(state) {
     uvs,
     indices,
     vertices,
+    normalizationFactor,
     minHeight: Number.isFinite(minHeight) ? minHeight : 0,
     maxHeight: Number.isFinite(maxHeight) ? maxHeight : 0,
   };
