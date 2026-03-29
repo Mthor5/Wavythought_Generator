@@ -15,6 +15,8 @@ Wavythought Generator is a browser-based V1 concept app for building static wave
 
 ## Getting started
 
+Live test link: [Wavythought Generator Preview](https://mthor5.github.io/Wavythought_Generator/)
+
 1. Open [index.html](./index.html) in a modern browser with internet access.
 2. The app loads a bundled sample profile immediately.
 3. Import an SVG, DXF, or image file to replace the sample.
@@ -22,6 +24,7 @@ Wavythought Generator is a browser-based V1 concept app for building static wave
 5. Export the V1 mesh once the shape looks right.
 
 Note: the 3D preview uses Three.js from a CDN to avoid a build step in this initial version.
+The GitHub Pages link works after the repo's Pages deployment runs from the included workflow.
 
 ## Controls
 
