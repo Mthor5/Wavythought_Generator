@@ -348,12 +348,14 @@ function sampleWaveHeightUnit(state, point) {
 
   const exteriorEdgeDistance = distanceToExteriorBoundary(state, point);
   const exteriorMask =
-    state.surface.edgeFade > 0
+    state.surface.edgeFadeEnabled && state.surface.edgeFade > 0
       ? smoothstep(0, state.surface.edgeFade, exteriorEdgeDistance)
       : 1;
   const internalEdgeDistance = distanceToInternalBoundary(state, point);
   const internalMask =
-    state.surface.edgeFadeAll && state.surface.internalEdgeFade > 0 && Number.isFinite(internalEdgeDistance)
+    state.surface.internalEdgeFadeEnabled &&
+    state.surface.internalEdgeFade > 0 &&
+    Number.isFinite(internalEdgeDistance)
       ? smoothstep(0, state.surface.internalEdgeFade, internalEdgeDistance)
       : 1;
 

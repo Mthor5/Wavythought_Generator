@@ -424,6 +424,13 @@ body:not(.lights-off) .theme-toggle .ghost-button {
   background: rgba(255, 255, 255, 0.72);
   border-color: rgba(31, 27, 31, 0.12);
   box-shadow: 0 12px 28px rgba(31, 27, 31, 0.12);
+  color: #2a2329;
+}
+
+body:not(.lights-off) .theme-toggle .ghost-button.is-active {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(31, 27, 31, 0.16);
+  color: #1f1b1f;
 }
 
 .eyebrow {
@@ -494,6 +501,25 @@ body.lights-off .profile-card {
   flex-wrap: wrap;
 }
 
+.source-add-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  flex: 1;
+  max-width: 15.5rem;
+  margin-left: auto;
+}
+
+.source-add-row .ghost-button {
+  width: 100%;
+}
+
+.import-action-row {
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+  margin-bottom: 1rem;
+}
+
 .panel,
 .hero,
 .viewport-card,
@@ -523,6 +549,13 @@ body.lights-off .profile-card {
   display: grid;
   gap: 0.4rem;
   margin-top: 0.8rem;
+}
+
+.control-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .value-control {
@@ -571,9 +604,31 @@ body.lights-off .segmented-control .ghost-button.is-active {
   padding-bottom: 0.15rem;
 }
 
+.inline-checkbox {
+  display: inline-grid;
+  margin-top: 0;
+  justify-content: end;
+}
+
 .checkbox-control input {
   inline-size: 1.05rem;
   block-size: 1.05rem;
+}
+
+.control.is-inactive,
+.control-grid.is-inactive,
+.control-grid.is-inactive .control,
+.control-grid.is-inactive .value-control,
+.control-grid.is-inactive .control-heading-row,
+.control-grid.is-inactive select,
+.control-grid.is-inactive input,
+.control-grid.is-inactive .checkbox-control span,
+.control.is-inactive .value-control,
+.control.is-inactive .control-heading-row,
+.control.is-inactive select,
+.control.is-inactive input,
+.control.is-inactive .checkbox-control span {
+  opacity: 0.5;
 }
 
 .stack-list {
@@ -610,6 +665,84 @@ body.lights-off .trace-card,
 body.lights-off .trace-preview-card {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.14);
+}
+
+.source-card.is-idle .inline-grid,
+.source-card.is-idle .value-control,
+.source-card.is-idle .control,
+.source-card.is-idle select,
+.source-card.is-idle input,
+.source-card.is-idle .checkbox-control span {
+  opacity: 0.5;
+}
+
+.wave-settings-card {
+  margin-top: 0.9rem;
+}
+
+.compact-wave-card .compact-wave-list {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 0.6rem;
+}
+
+.wave-source-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.1rem;
+  border-top: 1px solid rgba(88, 69, 46, 0.1);
+}
+
+.wave-source-row:first-child {
+  border-top: 0;
+  padding-top: 0.15rem;
+}
+
+.wave-source-row-manual {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.wave-source-primary,
+.wave-source-secondary {
+  margin-top: 0;
+}
+
+.wave-source-label-only {
+  display: block;
+}
+
+.wave-source-primary span,
+.wave-source-secondary span,
+.wave-source-row-meta {
+  font-size: 0.92rem;
+}
+
+.wave-source-secondary span,
+.wave-source-row-meta {
+  color: var(--muted);
+}
+
+.wave-source-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.wave-source-row-actions .ghost-button {
+  min-width: 0;
+  padding: 0.38rem 0.8rem;
+}
+
+.compact-action-button {
+  min-width: 0;
+  padding: 0.38rem 0.8rem;
+}
+
+body.lights-off .wave-source-row {
+  border-top-color: rgba(255, 255, 255, 0.12);
 }
 
 .trace-list-card {
@@ -805,7 +938,6 @@ body.lights-off .trace-row:hover {
   height: min(320px, 38vh);
   overflow: hidden;
   box-shadow: var(--panel-shadow-strong);
-  resize: both;
   min-width: 280px;
   min-height: 220px;
   max-width: min(720px, calc(100% - 2rem));
@@ -821,10 +953,86 @@ body.lights-off .trace-row:hover {
   cursor: grabbing;
 }
 
+.profile-card.is-resizing {
+  user-select: none;
+}
+
+.profile-resize-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  z-index: 8;
+}
+
+.profile-resize-handle-nw {
+  top: -10px;
+  left: -10px;
+  cursor: nwse-resize;
+}
+
+.profile-resize-handle-ne {
+  top: -10px;
+  right: -10px;
+  cursor: nesw-resize;
+}
+
+.profile-resize-handle-sw {
+  bottom: -10px;
+  left: -10px;
+  cursor: nesw-resize;
+}
+
+.profile-resize-handle-se {
+  bottom: -10px;
+  right: -10px;
+  cursor: nwse-resize;
+}
+
+.profile-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.78;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+.profile-resize-handle-nw::after {
+  background-image:
+    radial-gradient(circle at 100% 100%, transparent 10px, rgba(31, 27, 31, 0.52) 10px, rgba(31, 27, 31, 0.52) 11.5px, transparent 11.5px),
+    radial-gradient(circle at 100% 100%, transparent 6.5px, rgba(31, 27, 31, 0.52) 6.5px, rgba(31, 27, 31, 0.52) 8px, transparent 8px),
+    radial-gradient(circle at 100% 100%, transparent 3px, rgba(31, 27, 31, 0.52) 3px, rgba(31, 27, 31, 0.52) 4.5px, transparent 4.5px);
+}
+
+.profile-resize-handle-ne::after {
+  background-image:
+    radial-gradient(circle at 0 100%, transparent 10px, rgba(31, 27, 31, 0.52) 10px, rgba(31, 27, 31, 0.52) 11.5px, transparent 11.5px),
+    radial-gradient(circle at 0 100%, transparent 6.5px, rgba(31, 27, 31, 0.52) 6.5px, rgba(31, 27, 31, 0.52) 8px, transparent 8px),
+    radial-gradient(circle at 0 100%, transparent 3px, rgba(31, 27, 31, 0.52) 3px, rgba(31, 27, 31, 0.52) 4.5px, transparent 4.5px);
+}
+
+.profile-resize-handle-sw::after {
+  background-image:
+    radial-gradient(circle at 100% 0, transparent 10px, rgba(31, 27, 31, 0.52) 10px, rgba(31, 27, 31, 0.52) 11.5px, transparent 11.5px),
+    radial-gradient(circle at 100% 0, transparent 6.5px, rgba(31, 27, 31, 0.52) 6.5px, rgba(31, 27, 31, 0.52) 8px, transparent 8px),
+    radial-gradient(circle at 100% 0, transparent 3px, rgba(31, 27, 31, 0.52) 3px, rgba(31, 27, 31, 0.52) 4.5px, transparent 4.5px);
+}
+
+.profile-resize-handle-se::after {
+  background-image:
+    radial-gradient(circle at 0 0, transparent 10px, rgba(31, 27, 31, 0.52) 10px, rgba(31, 27, 31, 0.52) 11.5px, transparent 11.5px),
+    radial-gradient(circle at 0 0, transparent 6.5px, rgba(31, 27, 31, 0.52) 6.5px, rgba(31, 27, 31, 0.52) 8px, transparent 8px),
+    radial-gradient(circle at 0 0, transparent 3px, rgba(31, 27, 31, 0.52) 3px, rgba(31, 27, 31, 0.52) 4.5px, transparent 4.5px);
+}
+
+body.lights-off .profile-resize-handle::after {
+  filter: brightness(1.45);
+}
+
 .surface-toolbar {
   position: absolute;
-  left: 1rem;
-  top: 5.4rem;
+  left: 1.8rem;
+  top: 5.95rem;
   z-index: 5;
   display: grid;
   gap: 0.55rem;
@@ -833,6 +1041,10 @@ body.lights-off .trace-row:hover {
 .surface-toolbar button {
   min-width: 128px;
   justify-self: start;
+}
+
+.profile-card .card-header {
+  margin-bottom: 0.65rem;
 }
 
 body.lights-off .surface-toolbar button,
@@ -854,6 +1066,25 @@ body.lights-off .theme-toggle .ghost-button {
 body.lights-off .bbox-readout {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.14);
+}
+
+.surface-header-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.surface-preview-units {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.surface-preview-units .ghost-button {
+  min-width: 3.1rem;
+  padding-inline: 0.9rem;
 }
 
 #profileCanvas,
@@ -934,9 +1165,12 @@ body.lights-off .modal-panel {
     width: auto;
     height: 260px;
     z-index: auto;
-    resize: none;
     max-width: none;
     max-height: none;
+  }
+
+  .profile-resize-handle {
+    display: none;
   }
 
   .profile-card-header {

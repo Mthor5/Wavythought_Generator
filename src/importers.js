@@ -759,6 +759,161 @@ function quantizeImageData(imageData, colorSamples) {
   };
 }
 
+function blurScalarField(values, width, height, radius) {
+  if (radius <= 0) {
+    return Float32Array.from(values);
+  }
+
+  const horizontal = new Float32Array(values.length);
+  const blurred = new Float32Array(values.length);
+
+  for (let y = 0; y < height; y += 1) {
+    const prefix = new Float32Array(width + 1);
+    for (let x = 0; x < width; x += 1) {
+      prefix[x + 1] = prefix[x] + values[y * width + x];
+    }
+    for (let x = 0; x < width; x += 1) {
+      const start = Math.max(0, x - radius);
+      const end = Math.min(width - 1, x + radius);
+      horizontal[y * width + x] = (prefix[end + 1] - prefix[start]) / (end - start + 1);
+    }
+  }
+
+  for (let x = 0; x < width; x += 1) {
+    const prefix = new Float32Array(height + 1);
+    for (let y = 0; y < height; y += 1) {
+      prefix[y + 1] = prefix[y] + horizontal[y * width + x];
+    }
+    for (let y = 0; y < height; y += 1) {
+      const start = Math.max(0, y - radius);
+      const end = Math.min(height - 1, y + radius);
+      blurred[y * width + x] = (prefix[end + 1] - prefix[start]) / (end - start + 1);
+    }
+  }
+
+  return blurred;
+}
+
+function flattenImageShading(imageData, strength) {
+  const { data, width, height } = imageData;
+  const normalizedStrength = Math.min(1, Math.max(0, Number(strength) || 0));
+  if (normalizedStrength <= 0) {
+    return imageData;
+  }
+
+  const luminance = new Float32Array(width * height);
+  let opaqueCount = 0;
+  let globalLuminance = 0;
+
+  for (let index = 0; index < width * height; index += 1) {
+    const offset = index * 4;
+    const alpha = data[offset + 3];
+    if (alpha <= 24) {
+      continue;
+    }
+    const value = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
+    luminance[index] = value;
+    globalLuminance += value;
+    opaqueCount += 1;
+  }
+
+  if (!opaqueCount) {
+    return imageData;
+  }
+
+  globalLuminance /= opaqueCount;
+  const blurRadius = Math.max(1, Math.round(2 + normalizedStrength * 6));
+  const localLuminance = blurScalarField(luminance, width, height, blurRadius);
+  const flattenedData = new Uint8ClampedArray(data.length);
+
+  for (let index = 0; index < width * height; index += 1) {
+    const offset = index * 4;
+    const alpha = data[offset + 3];
+    flattenedData[offset + 3] = alpha;
+
+    if (alpha <= 24) {
+      continue;
+    }
+
+    const localValue = Math.max(localLuminance[index], 1);
+    const targetGain = Math.min(2.6, Math.max(0.38, globalLuminance / localValue));
+    const gain = 1 + (targetGain - 1) * normalizedStrength;
+    flattenedData[offset] = Math.min(255, Math.max(0, Math.round(data[offset] * gain)));
+    flattenedData[offset + 1] = Math.min(255, Math.max(0, Math.round(data[offset + 1] * gain)));
+    flattenedData[offset + 2] = Math.min(255, Math.max(0, Math.round(data[offset + 2] * gain)));
+  }
+
+  return new ImageData(flattenedData, width, height);
+}
+
+function blurRgbaImageData(imageData, radius) {
+  const { data, width, height } = imageData;
+  if (radius <= 0) {
+    return imageData;
+  }
+
+  const channels = [0, 1, 2].map((channel) => {
+    const values = new Float32Array(width * height);
+    for (let index = 0; index < width * height; index += 1) {
+      values[index] = data[index * 4 + channel];
+    }
+    return blurScalarField(values, width, height, radius);
+  });
+
+  const blurredData = new Uint8ClampedArray(data.length);
+  for (let index = 0; index < width * height; index += 1) {
+    const offset = index * 4;
+    blurredData[offset] = Math.round(channels[0][index]);
+    blurredData[offset + 1] = Math.round(channels[1][index]);
+    blurredData[offset + 2] = Math.round(channels[2][index]);
+    blurredData[offset + 3] = data[offset + 3];
+  }
+
+  return new ImageData(blurredData, width, height);
+}
+
+function preparePhotoImageData(imageData) {
+  const { data, width, height } = imageData;
+  const blurred = blurRgbaImageData(imageData, 2);
+  const prepared = new Uint8ClampedArray(data.length);
+
+  for (let index = 0; index < width * height; index += 1) {
+    const offset = index * 4;
+    const alpha = data[offset + 3];
+    prepared[offset + 3] = alpha;
+    if (alpha <= 24) {
+      continue;
+    }
+
+    const red = blurred.data[offset] / 255;
+    const green = blurred.data[offset + 1] / 255;
+    const blue = blurred.data[offset + 2] / 255;
+    const luminance = red * 0.299 + green * 0.587 + blue * 0.114;
+    const contrast = 1.18;
+    const contrastLift = (value) => Math.min(1, Math.max(0, (value - 0.5) * contrast + 0.5));
+    const saturatedRed = luminance + (red - luminance) * 1.15;
+    const saturatedGreen = luminance + (green - luminance) * 1.15;
+    const saturatedBlue = luminance + (blue - luminance) * 1.15;
+
+    prepared[offset] = Math.round(contrastLift(saturatedRed) * 255);
+    prepared[offset + 1] = Math.round(contrastLift(saturatedGreen) * 255);
+    prepared[offset + 2] = Math.round(contrastLift(saturatedBlue) * 255);
+  }
+
+  return new ImageData(prepared, width, height);
+}
+
+function prepareImageDataForTrace(imageData, settings) {
+  let prepared = imageData;
+  if (settings.imagePhotoPrep) {
+    prepared = preparePhotoImageData(prepared);
+  }
+  if (settings.imageFlattenShading) {
+    prepared = flattenImageShading(prepared, settings.imageFlattenStrength);
+  }
+  return prepared;
+}
+
 function buildRgbaPreview(width, height, colorProvider) {
   const rgba = new Uint8ClampedArray(width * height * 4);
   for (let index = 0; index < width * height; index += 1) {
@@ -1055,13 +1210,18 @@ function buildImageTraceFromImage(image, settings) {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d", { willReadFrequently: true });
   const longestSide = 256;
-  const scale = longestSide / Math.max(image.width, image.height);
+  const upscaleMultiplier = Math.max(1, Number(settings.imageUpscaleBeforeTrace) || 1);
+  const traceScale = settings.imagePhotoPrep ? 1.5 : 1;
+  const targetLongestSide = Math.min(1024, Math.round(longestSide * traceScale * upscaleMultiplier));
+  const scale = targetLongestSide / Math.max(image.width, image.height);
   canvas.width = Math.max(32, Math.round(image.width * scale));
   canvas.height = Math.max(32, Math.round(image.height * scale));
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const sourceImageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const processedImageData = prepareImageDataForTrace(sourceImageData, settings);
 
   const binary = buildMask(
-    context.getImageData(0, 0, canvas.width, canvas.height),
+    processedImageData,
     settings.imageThreshold,
     settings.invertImage,
     settings.imageColorSamples,
@@ -1077,14 +1237,18 @@ function buildImageTraceFromImage(image, settings) {
     const shade = binary.mask[index] ? 32 : 245;
     return { r: shade, g: shade, b: shade, a: 255 };
   });
-  let primaryLabel = "Color sample preview";
+  let primaryLabel = settings.imagePhotoPrep
+    ? "Photo-prepped color preview"
+    : settings.imageFlattenShading
+      ? "Flattened color preview"
+      : "Color sample preview";
   let secondaryLabel = "Threshold mask";
   let previewMode = "threshold";
   let tracedColorCount = binary.sampledColorCount;
 
   if (settings.imageImportMode === "segmentation") {
     const segmentation = buildSegmentationData(
-      context.getImageData(0, 0, canvas.width, canvas.height),
+      processedImageData,
       settings.imageColorSamples,
       settings.imageColorTolerance,
     );

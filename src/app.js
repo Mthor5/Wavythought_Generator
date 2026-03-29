@@ -19,6 +19,7 @@ import { createMaterialMaps } from "./materials.js";
 import { exportObjMesh, exportStlMesh, exportSurfaceJson } from "./exporters.js";
 
 const state = createDefaultState();
+const SURFACE_PLANE_OFFSET = 0.05;
 const HANDLE_COLORS = {
   point: { fill: "#f0a34b", stroke: "#7b3c10", emissive: "#a65012" },
   curve: { fill: "#59a8ff", stroke: "#1a4b80", emissive: "#1b4e84" },
@@ -31,12 +32,14 @@ const elements = {
   body: document.body,
   profileCard: document.querySelector(".profile-card"),
   profileCardHeader: document.querySelector(".profile-card-header"),
+  surfaceCardHeader: document.querySelector(".surface-card .card-header"),
   profileCanvas: document.getElementById("profileCanvas"),
   surfaceCanvas: document.getElementById("surfaceCanvas"),
   imageImportOptions: document.getElementById("imageImportOptions"),
   imageTracePanel: document.getElementById("imageTracePanel"),
   imageTraceList: document.getElementById("imageTraceList"),
   applyTraceRegionsButton: document.getElementById("applyTraceRegionsButton"),
+  importSizingControls: document.getElementById("importSizingControls"),
   vectorImportOptions: document.getElementById("vectorImportOptions"),
   profileDropZone: document.getElementById("profileDropZone"),
   profileDropZoneLabel: document.getElementById("profileDropZoneLabel"),
@@ -52,6 +55,13 @@ const elements = {
   invertImageInput: document.getElementById("invertImageInput"),
   imageColorSamplesInput: document.getElementById("imageColorSamplesInput"),
   imageColorSamplesNumber: document.getElementById("imageColorSamplesNumber"),
+  imagePhotoPrepInput: document.getElementById("imagePhotoPrepInput"),
+  imageUpscaleOffButton: document.getElementById("imageUpscaleOffButton"),
+  imageUpscale2xButton: document.getElementById("imageUpscale2xButton"),
+  imageUpscale4xButton: document.getElementById("imageUpscale4xButton"),
+  imageFlattenShadingInput: document.getElementById("imageFlattenShadingInput"),
+  imageFlattenStrengthInput: document.getElementById("imageFlattenStrengthInput"),
+  imageFlattenStrengthNumber: document.getElementById("imageFlattenStrengthNumber"),
   imageColorToleranceInput: document.getElementById("imageColorToleranceInput"),
   imageColorToleranceNumber: document.getElementById("imageColorToleranceNumber"),
   imageMinRegionAreaInput: document.getElementById("imageMinRegionAreaInput"),
@@ -81,6 +91,13 @@ const elements = {
   modalImageColorToleranceNumber: document.getElementById("modalImageColorToleranceNumber"),
   modalImageColorSamplesInput: document.getElementById("modalImageColorSamplesInput"),
   modalImageColorSamplesNumber: document.getElementById("modalImageColorSamplesNumber"),
+  modalImagePhotoPrepInput: document.getElementById("modalImagePhotoPrepInput"),
+  modalImageUpscaleOffButton: document.getElementById("modalImageUpscaleOffButton"),
+  modalImageUpscale2xButton: document.getElementById("modalImageUpscale2xButton"),
+  modalImageUpscale4xButton: document.getElementById("modalImageUpscale4xButton"),
+  modalImageFlattenShadingInput: document.getElementById("modalImageFlattenShadingInput"),
+  modalImageFlattenStrengthInput: document.getElementById("modalImageFlattenStrengthInput"),
+  modalImageFlattenStrengthNumber: document.getElementById("modalImageFlattenStrengthNumber"),
   modalImageMinRegionAreaInput: document.getElementById("modalImageMinRegionAreaInput"),
   modalImageMinRegionAreaNumber: document.getElementById("modalImageMinRegionAreaNumber"),
   modalImageCornerSmoothingInput: document.getElementById("modalImageCornerSmoothingInput"),
@@ -106,11 +123,14 @@ const elements = {
   resolutionNumber: document.getElementById("resolutionNumber"),
   heightScaleInput: document.getElementById("heightScaleInput"),
   heightScaleNumber: document.getElementById("heightScaleNumber"),
+  edgeFadeControl: document.getElementById("edgeFadeControl"),
+  edgeFadeEnabledInput: document.getElementById("edgeFadeEnabledInput"),
   edgeFadeInput: document.getElementById("edgeFadeInput"),
   edgeFadeNumber: document.getElementById("edgeFadeNumber"),
+  internalEdgeFadeControl: document.getElementById("internalEdgeFadeControl"),
+  internalEdgeFadeEnabledInput: document.getElementById("internalEdgeFadeEnabledInput"),
   internalEdgeFadeInput: document.getElementById("internalEdgeFadeInput"),
   internalEdgeFadeNumber: document.getElementById("internalEdgeFadeNumber"),
-  edgeFadeAllInput: document.getElementById("edgeFadeAllInput"),
   showSurfaceResolutionInput: document.getElementById("showSurfaceResolutionInput"),
   woodToggleInput: document.getElementById("woodToggleInput"),
   speciesSelect: document.getElementById("speciesSelect"),
@@ -164,9 +184,12 @@ const elements = {
   loadSampleButton: document.getElementById("loadSampleButton"),
   dockProfileButton: document.getElementById("dockProfileButton"),
   bboxReadout: document.getElementById("bboxReadout"),
+  previewUnitsMmButton: document.getElementById("previewUnitsMmButton"),
+  previewUnitsInButton: document.getElementById("previewUnitsInButton"),
   perspectiveViewButton: document.getElementById("perspectiveViewButton"),
   topViewButton: document.getElementById("topViewButton"),
   resetViewButton: document.getElementById("resetViewButton"),
+  zoomExtentsButton: document.getElementById("zoomExtentsButton"),
   toggleHelpersButton: document.getElementById("toggleHelpersButton"),
 };
 
@@ -203,6 +226,9 @@ const profilePanelState = {
   startY: 0,
   originLeft: 0,
   originTop: 0,
+  originWidth: 0,
+  originHeight: 0,
+  resizeHandle: null,
   docked: true,
 };
 const profileDragState = {
@@ -327,6 +353,14 @@ function convertUnitValue(value, fromUnits, toUnits) {
     return value * 25.4;
   }
   return value;
+}
+
+function getPreviewUnits() {
+  return state.ui.previewUnits || "mm";
+}
+
+function convertSourceValueToPreviewUnits(value) {
+  return convertUnitValue(value, state.meta.sourceUnits || "mm", getPreviewUnits());
 }
 
 function getAspectRatio(bounds) {
@@ -533,8 +567,8 @@ function syncImageTraceStatus() {
     : "";
   const modeLabel =
     applied.mode === "segmentation"
-      ? `Last retrace v${state.meta.imageTraceRevision}: color regions, colors ${applied.colorSamples}, tolerance ${applied.colorTolerance}, min area ${applied.minRegionArea}%, smoothing ${applied.cornerSmoothing}, simplify ${applied.pathSimplification}.`
-      : `Last retrace v${state.meta.imageTraceRevision}: threshold ${applied.threshold}, ${applied.invert ? "inverted" : "normal"}, colors ${applied.colorSamples}, min area ${applied.minRegionArea}%, smoothing ${applied.cornerSmoothing}, simplify ${applied.pathSimplification}.`;
+      ? `Last retrace v${state.meta.imageTraceRevision}: color regions, colors ${applied.colorSamples}, photo prep ${applied.photoPrep ? "on" : "off"}, upscale ${applied.upscaleBeforeTrace > 1 ? `${applied.upscaleBeforeTrace}x` : "off"}, flatten ${applied.flattenShading ? applied.flattenStrength : "off"}, tolerance ${applied.colorTolerance}, min area ${applied.minRegionArea}%, smoothing ${applied.cornerSmoothing}, simplify ${applied.pathSimplification}.`
+      : `Last retrace v${state.meta.imageTraceRevision}: threshold ${applied.threshold}, ${applied.invert ? "inverted" : "normal"}, colors ${applied.colorSamples}, photo prep ${applied.photoPrep ? "on" : "off"}, upscale ${applied.upscaleBeforeTrace > 1 ? `${applied.upscaleBeforeTrace}x` : "off"}, flatten ${applied.flattenShading ? applied.flattenStrength : "off"}, min area ${applied.minRegionArea}%, smoothing ${applied.cornerSmoothing}, simplify ${applied.pathSimplification}.`;
   const dirtyLabel = state.meta.imageTraceDirty ? "Settings changed. Click Retrace Image." : "";
   const pendingLabel = traceSelectionsMatch(
     state.meta.imageTraceCandidates,
@@ -787,10 +821,16 @@ function setImageImportMode(mode) {
 
 function formatBoundsReadout() {
   const bounds = state.meta.sourceBounds || { width: 0, height: 0 };
-  const units = state.meta.sourceUnits || state.importSettings.units || "mm";
-  const width = Number(bounds.width || 0).toFixed(2);
-  const height = Number(bounds.height || 0).toFixed(2);
-  return `BBox ${width} x ${height} ${units}`;
+  const units = getPreviewUnits();
+  const worldPerSourceUnit = getWorldUnitsPerSourceUnit();
+  const sourceHeight =
+    worldPerSourceUnit > 0
+      ? ((currentSurfaceGrid?.maxHeight ?? 0) - (currentSurfaceGrid?.minHeight ?? 0)) / worldPerSourceUnit
+      : 0;
+  const length = Number(convertSourceValueToPreviewUnits(bounds.width || 0)).toFixed(2);
+  const width = Number(convertSourceValueToPreviewUnits(bounds.height || 0)).toFixed(2);
+  const height = Number(convertSourceValueToPreviewUnits(sourceHeight)).toFixed(2);
+  return `BBox ${length} x ${width} x ${height} ${units}`;
 }
 
 function resizeCanvasToDisplaySize(canvas, useDevicePixels = true) {
@@ -842,6 +882,53 @@ function setProfileCardPosition(left, top) {
   elements.profileCard.style.right = "auto";
 }
 
+function setProfileCardRect(left, top, width, height) {
+  const margin = 16;
+  const minWidth = 280;
+  const minHeight = 220;
+  const workspaceWidth = elements.workspace.clientWidth;
+  const workspaceHeight = elements.workspace.clientHeight;
+  const maxWidth = Math.max(minWidth, workspaceWidth - margin * 2);
+  const maxHeight = Math.max(minHeight, workspaceHeight - margin * 2);
+
+  let nextWidth = Math.min(Math.max(width, minWidth), maxWidth);
+  let nextHeight = Math.min(Math.max(height, minHeight), maxHeight);
+  let nextLeft = left;
+  let nextTop = top;
+
+  if (nextLeft < margin) {
+    if (left !== nextLeft) {
+      nextWidth = Math.min(maxWidth, nextWidth - (margin - nextLeft));
+    }
+    nextLeft = margin;
+  }
+  if (nextTop < margin) {
+    if (top !== nextTop) {
+      nextHeight = Math.min(maxHeight, nextHeight - (margin - nextTop));
+    }
+    nextTop = margin;
+  }
+
+  if (nextLeft + nextWidth > workspaceWidth - margin) {
+    if (left !== nextLeft) {
+      nextWidth = Math.max(minWidth, workspaceWidth - margin - nextLeft);
+    } else {
+      nextLeft = workspaceWidth - margin - nextWidth;
+    }
+  }
+  if (nextTop + nextHeight > workspaceHeight - margin) {
+    if (top !== nextTop) {
+      nextHeight = Math.max(minHeight, workspaceHeight - margin - nextTop);
+    } else {
+      nextTop = workspaceHeight - margin - nextHeight;
+    }
+  }
+
+  elements.profileCard.style.width = `${nextWidth}px`;
+  elements.profileCard.style.height = `${nextHeight}px`;
+  setProfileCardPosition(nextLeft, nextTop);
+}
+
 function dockProfileCard() {
   if (isCompactLayout()) {
     elements.profileCard.style.left = "";
@@ -852,9 +939,11 @@ function dockProfileCard() {
   }
 
   profilePanelState.docked = true;
-  const margin = 16;
+  const margin = 32;
   const left = elements.workspace.clientWidth - elements.profileCard.offsetWidth - margin;
-  setProfileCardPosition(left, margin);
+  const headerHeight = elements.surfaceCardHeader?.offsetHeight || 0;
+  const top = headerHeight + 54;
+  setProfileCardPosition(left, top);
 }
 
 function clampFloatingProfileCard() {
@@ -870,7 +959,7 @@ function clampFloatingProfileCard() {
 
   const left = Number.parseFloat(elements.profileCard.style.left || "16");
   const top = Number.parseFloat(elements.profileCard.style.top || "16");
-  setProfileCardPosition(left, top);
+  setProfileCardRect(left, top, elements.profileCard.offsetWidth, elements.profileCard.offsetHeight);
 }
 
 function initFloatingProfileCard() {
@@ -886,6 +975,9 @@ function initFloatingProfileCard() {
     profilePanelState.startY = event.clientY;
     profilePanelState.originLeft = Number.parseFloat(elements.profileCard.style.left || "16");
     profilePanelState.originTop = Number.parseFloat(elements.profileCard.style.top || "16");
+    profilePanelState.originWidth = elements.profileCard.offsetWidth;
+    profilePanelState.originHeight = elements.profileCard.offsetHeight;
+    profilePanelState.resizeHandle = null;
     profilePanelState.docked = false;
     elements.profileCard.classList.add("is-dragging");
     elements.profileCardHeader.setPointerCapture(event.pointerId);
@@ -901,19 +993,81 @@ function initFloatingProfileCard() {
     setProfileCardPosition(profilePanelState.originLeft + dx, profilePanelState.originTop + dy);
   });
 
+  elements.profileCard.querySelectorAll("[data-resize-handle]").forEach((handle) => {
+    handle.addEventListener("pointerdown", (event) => {
+      if (isCompactLayout()) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      profilePanelState.pointerId = event.pointerId;
+      profilePanelState.startX = event.clientX;
+      profilePanelState.startY = event.clientY;
+      profilePanelState.originLeft = Number.parseFloat(elements.profileCard.style.left || "16");
+      profilePanelState.originTop = Number.parseFloat(elements.profileCard.style.top || "16");
+      profilePanelState.originWidth = elements.profileCard.offsetWidth;
+      profilePanelState.originHeight = elements.profileCard.offsetHeight;
+      profilePanelState.resizeHandle = handle.dataset.resizeHandle;
+      profilePanelState.docked = false;
+      elements.profileCard.classList.add("is-resizing");
+      handle.setPointerCapture(event.pointerId);
+    });
+
+    handle.addEventListener("pointermove", (event) => {
+      if (profilePanelState.pointerId !== event.pointerId || isCompactLayout() || !profilePanelState.resizeHandle) {
+        return;
+      }
+
+      const dx = event.clientX - profilePanelState.startX;
+      const dy = event.clientY - profilePanelState.startY;
+      let left = profilePanelState.originLeft;
+      let top = profilePanelState.originTop;
+      let width = profilePanelState.originWidth;
+      let height = profilePanelState.originHeight;
+
+      if (profilePanelState.resizeHandle.includes("e")) {
+        width = profilePanelState.originWidth + dx;
+      }
+      if (profilePanelState.resizeHandle.includes("s")) {
+        height = profilePanelState.originHeight + dy;
+      }
+      if (profilePanelState.resizeHandle.includes("w")) {
+        left = profilePanelState.originLeft + dx;
+        width = profilePanelState.originWidth - dx;
+      }
+      if (profilePanelState.resizeHandle.includes("n")) {
+        top = profilePanelState.originTop + dy;
+        height = profilePanelState.originHeight - dy;
+      }
+
+      setProfileCardRect(left, top, width, height);
+    });
+  });
+
   const releaseDrag = (event) => {
     if (profilePanelState.pointerId !== event.pointerId) {
       return;
     }
     profilePanelState.pointerId = null;
+    profilePanelState.resizeHandle = null;
     elements.profileCard.classList.remove("is-dragging");
+    elements.profileCard.classList.remove("is-resizing");
     if (elements.profileCardHeader.hasPointerCapture(event.pointerId)) {
       elements.profileCardHeader.releasePointerCapture(event.pointerId);
     }
+    elements.profileCard.querySelectorAll("[data-resize-handle]").forEach((handle) => {
+      if (handle.hasPointerCapture(event.pointerId)) {
+        handle.releasePointerCapture(event.pointerId);
+      }
+    });
   };
 
   elements.profileCardHeader.addEventListener("pointerup", releaseDrag);
   elements.profileCardHeader.addEventListener("pointercancel", releaseDrag);
+  elements.profileCard.querySelectorAll("[data-resize-handle]").forEach((handle) => {
+    handle.addEventListener("pointerup", releaseDrag);
+    handle.addEventListener("pointercancel", releaseDrag);
+  });
   elements.dockProfileButton.addEventListener("click", dockProfileCard);
 
   resizeObserver = new ResizeObserver(() => {
@@ -934,7 +1088,19 @@ function initCollapsiblePanels() {
     const toggleButton = document.createElement("button");
     toggleButton.type = "button";
     toggleButton.className = "ghost-button panel-toggle";
-    toggleButton.textContent = "-";
+    const title = heading.querySelector("h2")?.textContent?.trim();
+    if (title === "Theme") {
+      return;
+    }
+    const shouldStartCollapsed =
+      title === "Surface Mesh Resolution" ||
+      title === "Wood Grain Preview" ||
+      title === "Render View" ||
+      title === "Export";
+    if (shouldStartCollapsed) {
+      panel.classList.add("is-collapsed");
+    }
+    toggleButton.textContent = shouldStartCollapsed ? "+" : "-";
     toggleButton.addEventListener("click", () => {
       const collapsed = panel.classList.toggle("is-collapsed");
       toggleButton.textContent = collapsed ? "+" : "-";
@@ -1028,7 +1194,23 @@ function syncSharedWaveSettingsPanel() {
   const primary = getPrimarySelectedWaveSource();
   const selectedCount = getSelectedWaveSources().length;
   const hasSelection = Boolean(primary);
-  elements.sharedWaveSettingsPanel.classList.toggle("is-hidden", !hasSelection);
+  elements.sharedWaveSettingsPanel.classList.toggle("is-idle", !hasSelection);
+  [
+    elements.sharedAmplitudeInput,
+    elements.sharedAmplitudeNumber,
+    elements.sharedFrequencyInput,
+    elements.sharedFrequencyNumber,
+    elements.sharedPhaseInput,
+    elements.sharedPhaseNumber,
+    elements.sharedDecayInput,
+    elements.sharedDecayNumber,
+    elements.sharedReachInput,
+    elements.sharedReachNumber,
+    elements.sharedContinuationSelect,
+    elements.sharedOperationSelect,
+  ].forEach((control) => {
+    control.disabled = !hasSelection;
+  });
   if (!hasSelection) {
     elements.sharedWaveSettingsStatus.textContent = "Select a wave source to edit its settings.";
     return;
@@ -1056,7 +1238,6 @@ function syncSharedWaveSettingsPanel() {
   );
   elements.sharedContinuationSelect.value = primary.continuation;
   elements.sharedOperationSelect.value = primary.operation;
-  elements.normalizeWavesInput.checked = state.surface.normalizeCombinedHeight;
 }
 
 function applyImageTraceSelection(selection = state.meta.imageTraceSelection) {
@@ -1084,6 +1265,10 @@ function applyImportedResult(result, fileName) {
       threshold: state.importSettings.imageThreshold,
       invert: state.importSettings.invertImage,
       colorSamples: state.importSettings.imageColorSamples,
+      photoPrep: state.importSettings.imagePhotoPrep,
+      upscaleBeforeTrace: state.importSettings.imageUpscaleBeforeTrace,
+      flattenShading: state.importSettings.imageFlattenShading,
+      flattenStrength: state.importSettings.imageFlattenStrength,
       colorTolerance: state.importSettings.imageColorTolerance,
       minRegionArea: state.importSettings.imageMinRegionArea,
       cornerSmoothing: state.importSettings.imageCornerSmoothing,
@@ -1323,8 +1508,8 @@ function update3DHelperObjects() {
 
   const bounds = currentSurfaceGrid?.bounds || { width: 1, height: 1 };
   const maxDimension = Math.max(bounds.width, bounds.height, 1);
-  const worldPerUnit = getWorldUnitsPerSourceUnit();
-  const targetHandleSize = state.meta.sourceUnits === "in" ? 0.125 : 2;
+  const worldPerUnit = getWorldUnitsPerPreviewUnit();
+  const targetHandleSize = getPreviewUnits() === "in" ? 0.125 : 2;
   const physicalRadius = targetHandleSize * worldPerUnit;
   const visibleRadius = maxDimension > 10 ? maxDimension * 0.0135 : maxDimension * 0.038;
   const pointRadius = THREE.MathUtils.clamp(
@@ -1558,6 +1743,29 @@ function resetSurfaceView() {
   controls.update();
 }
 
+function zoomExtentsSurfaceView() {
+  const frame = getSurfaceFrame();
+  const center = new THREE.Vector3(frame.centerX, frame.centerY, frame.targetZ);
+  const currentDirection = new THREE.Vector3()
+    .subVectors(camera.position, controls.target)
+    .normalize();
+  if (!Number.isFinite(currentDirection.lengthSq()) || currentDirection.lengthSq() === 0) {
+    currentDirection.set(0.54, -0.68, 0.5).normalize();
+  }
+
+  const radius = Math.max(frame.width, frame.height, frame.groundedHeight) * 0.5;
+  const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov * 0.5) * camera.aspect);
+  const fitFov = Math.min(verticalFov, horizontalFov);
+  const distance = Math.max(radius / Math.tan(fitFov * 0.5) + radius * 0.45, 0.5);
+
+  camera.up.set(0, 0, 1);
+  controls.target.copy(center);
+  camera.position.copy(center).add(currentDirection.multiplyScalar(distance));
+  camera.lookAt(center);
+  controls.update();
+}
+
 function buildSurfaceMaterial(colorMapTexture, alphaMapTexture) {
   const material = new THREE.MeshStandardMaterial({
     map: colorMapTexture,
@@ -1692,6 +1900,13 @@ function getWorldUnitsPerSourceUnit() {
   return 1;
 }
 
+function getWorldUnitsPerPreviewUnit() {
+  const previewUnits = getPreviewUnits();
+  const sourceUnits = state.meta.sourceUnits || "mm";
+  const sourceUnitsPerPreviewUnit = convertUnitValue(1, previewUnits, sourceUnits);
+  return sourceUnitsPerPreviewUnit * getWorldUnitsPerSourceUnit();
+}
+
 function buildGridLinePositions(extentX, extentY, spacing) {
   const positions = [];
   const halfStepsX = Math.floor(extentX / spacing);
@@ -1716,10 +1931,10 @@ function updateSceneGrid() {
   }
 
   gridGroup.clear();
-  const unitMode = state.meta.sourceUnits === "in" ? "in" : "mm";
+  const unitMode = getPreviewUnits() === "in" ? "in" : "mm";
   const majorUnitStep = unitMode === "in" ? 1 : 10;
   const minorUnitStep = unitMode === "in" ? 0.25 : 1;
-  const worldPerUnit = getWorldUnitsPerSourceUnit();
+  const worldPerUnit = getWorldUnitsPerPreviewUnit();
   const majorSpacing = majorUnitStep * worldPerUnit;
   const minorSpacing = minorUnitStep * worldPerUnit;
 
@@ -1810,7 +2025,17 @@ function initThree() {
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
+  controls.enablePan = true;
+  controls.screenSpacePanning = true;
+  controls.mouseButtons = {
+    LEFT: THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.DOLLY,
+    RIGHT: THREE.MOUSE.PAN,
+  };
   controls.target.set(0, 0, 0.04);
+  renderer.domElement.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+  });
 
   liveAmbientLight = new THREE.AmbientLight("#fff7ee", 1.4);
   scene.add(liveAmbientLight);
@@ -1913,7 +2138,7 @@ function updateThreeSurface() {
   const material = buildSurfaceMaterial(materialMap, alphaMap);
 
   surfaceMesh = new THREE.Mesh(geometry, material);
-  surfaceMesh.position.z = -currentSurfaceGrid.minHeight;
+  surfaceMesh.position.z = -currentSurfaceGrid.minHeight + SURFACE_PLANE_OFFSET;
   surfaceMesh.castShadow = true;
   surfaceMesh.receiveShadow = true;
   scene.add(surfaceMesh);
@@ -1935,6 +2160,7 @@ function updateThreeSurface() {
   update3DHelperObjects();
   updateTraceHighlightObjects();
   updateSceneGrid();
+  elements.bboxReadout.textContent = formatBoundsReadout();
 }
 
 function getRenderPresetConfig() {
@@ -2654,110 +2880,205 @@ function renderRegionWaveSourceList() {
   }
 
   elements.regionWaveSourceList.innerHTML = "";
+  const enabledRows = [];
+  const availableRows = [];
+
   innerLoops.forEach((loop) => {
     const source = state.sources.find((item) => item.type === "region" && item.regionLoopId === loop.id);
-    const card = document.createElement("article");
-    card.className = "source-card";
-    card.innerHTML = `
-      <header>
-        <div>
-          <h3>${loop.label}</h3>
-          <p>${source ? "Closed-loop region wave source" : "Use this interior region as a closed-loop wave source."}</p>
-        </div>
-      </header>
-      <div class="source-card-actions">
-        ${
-          source
-            ? `
-              <label class="checkbox-control source-select-control">
-                <input
-                  type="checkbox"
-                  data-action="select-wave-source"
-                  data-source-id="${source.id}"
-                  ${isWaveSourceSelected(source.id) ? "checked" : ""}
-                />
-                <span>Select for shared settings</span>
-              </label>
-            `
-            : '<span class="status-text">Enable this region to make it editable in the shared wave settings panel.</span>'
-        }
-        <button
-          class="ghost-button"
+    const row = document.createElement("div");
+    row.className = "wave-source-row";
+    row.innerHTML = `
+      <label class="checkbox-control wave-source-primary">
+        <input
+          type="checkbox"
           data-action="toggle-region-wave"
           data-loop-id="${loop.id}"
-          type="button"
-        >
-          ${source ? "Remove Wave" : "Use as Wave"}
-        </button>
-      </div>
+          ${source ? "checked" : ""}
+        />
+        <span>${loop.label}</span>
+      </label>
+      <span class="wave-source-row-meta">${
+        source ? (isWaveSourceSelected(source.id) ? "Selected" : "Enabled") : "Off"
+      }</span>
     `;
-    card.querySelector('[data-action="toggle-region-wave"]').addEventListener("click", () => {
+
+    row.querySelector('[data-action="toggle-region-wave"]').addEventListener("change", (event) => {
+      const isEnabled = event.target.checked;
       const existingIndex = state.sources.findIndex(
         (item) => item.type === "region" && item.regionLoopId === loop.id,
       );
-      if (existingIndex >= 0) {
+      if (!isEnabled && existingIndex >= 0) {
         const removed = state.sources[existingIndex];
         state.sources.splice(existingIndex, 1);
         toggleWaveSourceSelection(removed.id, false);
         state.ui.status = `Removed ${removed.label}.`;
-      } else {
+      } else if (isEnabled && existingIndex < 0) {
         const nextSource = createRegionWaveSource(loop);
         state.sources.push(nextSource);
         toggleWaveSourceSelection(nextSource.id, true);
         state.ui.status = `Added ${loop.label} as a wave source.`;
+      } else if (isEnabled && existingIndex >= 0) {
+        toggleWaveSourceSelection(state.sources[existingIndex].id, true);
+        state.ui.status = `Selected ${loop.label} for shared wave settings.`;
       }
       syncView();
     });
-    card.querySelectorAll('[data-action="select-wave-source"]').forEach((input) => {
-      input.addEventListener("change", (event) => {
-        toggleWaveSourceSelection(event.target.dataset.sourceId, event.target.checked);
-        syncView();
-      });
-    });
-    elements.regionWaveSourceList.append(card);
+
+    if (source) {
+      enabledRows.push(row);
+    } else {
+      availableRows.push(row);
+    }
   });
+
+  if (enabledRows.length) {
+    const enabledCard = document.createElement("article");
+    enabledCard.className = "source-card compact-wave-card";
+    enabledCard.innerHTML = `
+      <header>
+        <div>
+          <h3>Enabled Region Waves</h3>
+          <p>These interior regions are active wave sources.</p>
+        </div>
+        <button class="ghost-button compact-action-button" type="button" data-action="unselect-all-region-waves">Unselect All</button>
+      </header>
+      <div class="compact-wave-list"></div>
+    `;
+    const enabledList = enabledCard.querySelector(".compact-wave-list");
+    enabledRows.forEach((row) => enabledList.append(row));
+    enabledCard.querySelector('[data-action="unselect-all-region-waves"]').addEventListener("click", () => {
+      const regionSources = innerLoops
+        .map((loop) => state.sources.find((item) => item.type === "region" && item.regionLoopId === loop.id))
+        .filter((item) => item && isWaveSourceSelected(item.id));
+      regionSources.forEach((sourceItem) => {
+        toggleWaveSourceSelection(sourceItem.id, false);
+      });
+      state.ui.status = "Unselected all region wave sources.";
+      syncView();
+    });
+    elements.regionWaveSourceList.append(enabledCard);
+  }
+
+  if (availableRows.length) {
+    const listCard = document.createElement("article");
+    listCard.className = "source-card compact-wave-card";
+    listCard.innerHTML = `
+      <header>
+        <div>
+          <h3>Region Wave Sources</h3>
+          <p>Enable interior regions here.</p>
+        </div>
+        <button class="ghost-button compact-action-button" type="button" data-action="enable-all-region-waves">Enable All</button>
+      </header>
+      <div class="compact-wave-list"></div>
+    `;
+    const list = listCard.querySelector(".compact-wave-list");
+    availableRows.forEach((row) => list.append(row));
+    listCard.querySelector('[data-action="enable-all-region-waves"]').addEventListener("click", () => {
+      innerLoops.forEach((loop) => {
+        const existingSource = state.sources.find((item) => item.type === "region" && item.regionLoopId === loop.id);
+        if (!existingSource) {
+          const nextSource = createRegionWaveSource(loop);
+          state.sources.push(nextSource);
+          toggleWaveSourceSelection(nextSource.id, true);
+        }
+      });
+      state.ui.status = "Enabled all region wave sources.";
+      syncView();
+    });
+    elements.regionWaveSourceList.append(listCard);
+  }
 }
 
 function renderSourceList() {
   elements.sourceList.innerHTML = "";
-  state.sources.filter((source) => source.type !== "region").forEach((source) => {
-    const sourceDescription =
-      source.type === "point"
-        ? "Radial wave source"
-        : "Distance-to-curve wave source";
+  const groupedSources = [
+    {
+      type: "point",
+      title: "Point Wave Sources",
+      description: "Radial wave sources.",
+      sources: state.sources.filter((source) => source.type === "point"),
+    },
+    {
+      type: "curve",
+      title: "Curve Wave Sources",
+      description: "Distance-to-curve wave sources.",
+      sources: state.sources.filter((source) => source.type === "curve"),
+    },
+  ];
+
+  if (!groupedSources.some((group) => group.sources.length)) {
+    elements.sourceList.innerHTML = '<p class="status-text">No point or curve wave sources yet.</p>';
+    return;
+  }
+
+  groupedSources.forEach((group) => {
+    if (!group.sources.length) {
+      return;
+    }
+
+    const allSelected = group.sources.every((source) => isWaveSourceSelected(source.id));
+
     const card = document.createElement("article");
-    card.className = "source-card";
+    card.className = "source-card compact-wave-card";
     card.innerHTML = `
       <header>
         <div>
-          <h3>${source.label}</h3>
-          <p>${sourceDescription}</p>
+          <h3>${group.title}</h3>
+          <p>${group.description}</p>
         </div>
-        <button data-action="remove-source" data-source-id="${source.id}" class="ghost-button">Remove</button>
+        <button class="ghost-button compact-action-button" type="button" data-action="select-all-group">
+          ${allSelected ? "Deselect All" : "Select All"}
+        </button>
       </header>
-      <div class="source-card-actions">
-        <label class="checkbox-control source-select-control">
-          <input
-            type="checkbox"
-            data-action="select-wave-source"
-            data-source-id="${source.id}"
-            ${isWaveSourceSelected(source.id) ? "checked" : ""}
-          />
-          <span>Select for shared settings</span>
-        </label>
-      </div>
+      <div class="compact-wave-list"></div>
     `;
+
+    const list = card.querySelector(".compact-wave-list");
+    group.sources.forEach((source) => {
+      const row = document.createElement("div");
+      row.className = "wave-source-row wave-source-row-manual";
+      row.innerHTML = `
+        <div class="wave-source-primary wave-source-label-only">
+          <span>${source.label}</span>
+        </div>
+        <div class="wave-source-row-actions">
+          <label class="checkbox-control wave-source-secondary">
+            <input
+              type="checkbox"
+              data-action="select-wave-source"
+              data-source-id="${source.id}"
+              ${isWaveSourceSelected(source.id) ? "checked" : ""}
+            />
+            <span>Edit</span>
+          </label>
+          <button data-action="remove-source" data-source-id="${source.id}" class="ghost-button" type="button">Remove</button>
+        </div>
+      `;
+
+      row.querySelector('[data-action="select-wave-source"]').addEventListener("change", (event) => {
+        toggleWaveSourceSelection(event.target.dataset.sourceId, event.target.checked);
+        syncView();
+      });
+      row.querySelector('[data-action="remove-source"]').addEventListener("click", () => {
+        toggleWaveSourceSelection(source.id, false);
+        state.sources = state.sources.filter((item) => item.id !== source.id);
+        state.ui.status = `Removed ${source.label}.`;
+        syncView();
+      });
+      list.append(row);
+    });
+
+    card.querySelector('[data-action="select-all-group"]').addEventListener("click", () => {
+      const nextSelected = !group.sources.every((source) => isWaveSourceSelected(source.id));
+      group.sources.forEach((source) => {
+        toggleWaveSourceSelection(source.id, nextSelected);
+      });
+      state.ui.status = `${nextSelected ? "Selected" : "Deselected"} all ${group.type} wave sources.`;
+      syncView();
+    });
+
     elements.sourceList.append(card);
-    card.querySelector('[data-action="select-wave-source"]').addEventListener("change", (event) => {
-      toggleWaveSourceSelection(event.target.dataset.sourceId, event.target.checked);
-      syncView();
-    });
-    card.querySelector('[data-action="remove-source"]').addEventListener("click", () => {
-      toggleWaveSourceSelection(source.id, false);
-      state.sources = state.sources.filter((item) => item.id !== source.id);
-      state.ui.status = `Removed ${source.label}.`;
-      syncView();
-    });
   });
 }
 
@@ -2909,11 +3230,21 @@ function syncRenderStatus() {
   elements.renderStatus.textContent = state.ui.renderStatus;
 }
 
+function syncInactiveControlState(element, active) {
+  if (!element) {
+    return;
+  }
+  element.classList.toggle("is-inactive", !active);
+}
+
 function syncView() {
+  const hasPendingImportFile = Boolean(state.meta.pendingImportFile);
   elements.svgSamplesInput.value = String(state.importSettings.curveSamples);
   elements.svgSamplesNumber.value = String(state.importSettings.curveSamples);
   elements.unitsMmButton.classList.toggle("is-active", state.importSettings.units === "mm");
   elements.unitsInButton.classList.toggle("is-active", state.importSettings.units === "in");
+  elements.previewUnitsMmButton.classList.toggle("is-active", getPreviewUnits() === "mm");
+  elements.previewUnitsInButton.classList.toggle("is-active", getPreviewUnits() === "in");
   elements.importWidthInput.value = Number(state.importSettings.importWidth).toFixed(3);
   elements.importHeightInput.value = Number(state.importSettings.importHeight).toFixed(3);
   elements.aspectLockInput.checked = state.importSettings.aspectLocked;
@@ -2924,15 +3255,26 @@ function syncView() {
   elements.importProfileButton.textContent = state.meta.pendingImportFile
     ? `Import ${state.meta.pendingImportFile.name}`
     : "Import Selected File";
+  syncInactiveControlState(elements.imageImportOptions, hasPendingImportFile);
+  syncInactiveControlState(elements.importSizingControls, hasPendingImportFile);
+  syncInactiveControlState(elements.vectorImportOptions, hasPendingImportFile);
   elements.resolutionInput.value = String(state.surface.resolution);
   elements.resolutionNumber.value = String(state.surface.resolution);
   elements.heightScaleInput.value = String(state.surface.heightScale);
   elements.heightScaleNumber.value = String(state.surface.heightScale);
+  elements.edgeFadeEnabledInput.checked = state.surface.edgeFadeEnabled;
   elements.edgeFadeInput.value = String(state.surface.edgeFade);
   elements.edgeFadeNumber.value = String(state.surface.edgeFade);
+  elements.internalEdgeFadeEnabledInput.checked = state.surface.internalEdgeFadeEnabled;
   elements.internalEdgeFadeInput.value = String(state.surface.internalEdgeFade);
   elements.internalEdgeFadeNumber.value = String(state.surface.internalEdgeFade);
-  elements.edgeFadeAllInput.checked = state.surface.edgeFadeAll;
+  elements.normalizeWavesInput.checked = state.surface.normalizeCombinedHeight;
+  elements.edgeFadeInput.disabled = !state.surface.edgeFadeEnabled;
+  elements.edgeFadeNumber.disabled = !state.surface.edgeFadeEnabled;
+  elements.internalEdgeFadeInput.disabled = !state.surface.internalEdgeFadeEnabled;
+  elements.internalEdgeFadeNumber.disabled = !state.surface.internalEdgeFadeEnabled;
+  syncInactiveControlState(elements.edgeFadeControl, state.surface.edgeFadeEnabled);
+  syncInactiveControlState(elements.internalEdgeFadeControl, state.surface.internalEdgeFadeEnabled);
   elements.showSurfaceResolutionInput.checked = state.surface.showResolutionEdges;
   elements.woodToggleInput.checked = state.surface.woodEnabled;
   elements.speciesSelect.value = state.surface.species;
@@ -3059,15 +3401,7 @@ function updateImportSize(axis, rawValue) {
 
   if (state.meta.pendingImportFile) {
     state.ui.status = `Updated import size for ${state.meta.pendingImportFile.name}. Click Import Selected File.`;
-    syncView();
-    return;
   }
-
-  if (state.meta.importedFile) {
-    refreshImportedProfile("Updated import size");
-    return;
-  }
-
   syncView();
 }
 
@@ -3088,19 +3422,21 @@ function setImportUnits(nextUnits) {
     previousUnits,
     nextUnits,
   );
-  state.meta.sourceUnits = nextUnits;
 
   if (state.meta.pendingImportFile) {
     state.ui.status = `Updated import units for ${state.meta.pendingImportFile.name}. Click Import Selected File.`;
-    syncView();
+  }
+
+  syncView();
+}
+
+function setPreviewUnits(nextUnits) {
+  if (getPreviewUnits() === nextUnits) {
     return;
   }
 
-  if (state.meta.importedFile) {
-    refreshImportedProfile("Updated import units");
-    return;
-  }
-
+  state.ui.previewUnits = nextUnits;
+  state.ui.status = `Preview units set to ${nextUnits}.`;
   syncView();
 }
 
@@ -3134,6 +3470,10 @@ function resetToSample() {
   state.importSettings.invertImage = fresh.importSettings.invertImage;
   state.importSettings.imageColorTolerance = fresh.importSettings.imageColorTolerance;
   state.importSettings.imageColorSamples = fresh.importSettings.imageColorSamples;
+  state.importSettings.imagePhotoPrep = fresh.importSettings.imagePhotoPrep;
+  state.importSettings.imageUpscaleBeforeTrace = fresh.importSettings.imageUpscaleBeforeTrace;
+  state.importSettings.imageFlattenShading = fresh.importSettings.imageFlattenShading;
+  state.importSettings.imageFlattenStrength = fresh.importSettings.imageFlattenStrength;
   state.importSettings.imageMinRegionArea = fresh.importSettings.imageMinRegionArea;
   state.importSettings.imageCornerSmoothing = fresh.importSettings.imageCornerSmoothing;
   state.importSettings.imagePathSimplification = fresh.importSettings.imagePathSimplification;
@@ -3271,6 +3611,25 @@ function syncImageTraceControls() {
   elements.imageColorSamplesNumber.value = String(state.importSettings.imageColorSamples);
   elements.modalImageColorSamplesInput.value = String(state.importSettings.imageColorSamples);
   elements.modalImageColorSamplesNumber.value = String(state.importSettings.imageColorSamples);
+  elements.imagePhotoPrepInput.checked = state.importSettings.imagePhotoPrep;
+  elements.modalImagePhotoPrepInput.checked = state.importSettings.imagePhotoPrep;
+  const upscaleMultiplier = Number(state.importSettings.imageUpscaleBeforeTrace) || 1;
+  elements.imageUpscaleOffButton.classList.toggle("is-active", upscaleMultiplier === 1);
+  elements.imageUpscale2xButton.classList.toggle("is-active", upscaleMultiplier === 2);
+  elements.imageUpscale4xButton.classList.toggle("is-active", upscaleMultiplier === 4);
+  elements.modalImageUpscaleOffButton.classList.toggle("is-active", upscaleMultiplier === 1);
+  elements.modalImageUpscale2xButton.classList.toggle("is-active", upscaleMultiplier === 2);
+  elements.modalImageUpscale4xButton.classList.toggle("is-active", upscaleMultiplier === 4);
+  elements.imageFlattenShadingInput.checked = state.importSettings.imageFlattenShading;
+  elements.modalImageFlattenShadingInput.checked = state.importSettings.imageFlattenShading;
+  elements.imageFlattenStrengthInput.value = String(state.importSettings.imageFlattenStrength);
+  elements.imageFlattenStrengthNumber.value = String(state.importSettings.imageFlattenStrength);
+  elements.modalImageFlattenStrengthInput.value = String(state.importSettings.imageFlattenStrength);
+  elements.modalImageFlattenStrengthNumber.value = String(state.importSettings.imageFlattenStrength);
+  elements.imageFlattenStrengthInput.disabled = !state.importSettings.imageFlattenShading;
+  elements.imageFlattenStrengthNumber.disabled = !state.importSettings.imageFlattenShading;
+  elements.modalImageFlattenStrengthInput.disabled = !state.importSettings.imageFlattenShading;
+  elements.modalImageFlattenStrengthNumber.disabled = !state.importSettings.imageFlattenShading;
   elements.imageMinRegionAreaInput.value = String(state.importSettings.imageMinRegionArea);
   elements.imageMinRegionAreaNumber.value = String(state.importSettings.imageMinRegionArea);
   elements.modalImageMinRegionAreaInput.value = String(state.importSettings.imageMinRegionArea);
@@ -3421,6 +3780,59 @@ function wireEvents() {
   bindPairedControl(elements.imageColorSamplesInput, elements.imageColorSamplesNumber, applyColorSamples);
   bindPairedControl(elements.modalImageColorSamplesInput, elements.modalImageColorSamplesNumber, applyColorSamples);
 
+  const applyPhotoPrep = (checked) => {
+    state.importSettings.imagePhotoPrep = checked;
+    handleImageTraceSettingChange("Updated photo trace prep");
+  };
+  elements.imagePhotoPrepInput.addEventListener("change", (event) => {
+    applyPhotoPrep(event.target.checked);
+  });
+  elements.modalImagePhotoPrepInput.addEventListener("change", (event) => {
+    applyPhotoPrep(event.target.checked);
+  });
+
+  const applyUpscaleBeforeTrace = (multiplier) => {
+    state.importSettings.imageUpscaleBeforeTrace = multiplier;
+    handleImageTraceSettingChange("Updated trace upscale");
+  };
+  [elements.imageUpscaleOffButton, elements.modalImageUpscaleOffButton].forEach((button) => {
+    button.addEventListener("click", () => {
+      applyUpscaleBeforeTrace(1);
+    });
+  });
+  [elements.imageUpscale2xButton, elements.modalImageUpscale2xButton].forEach((button) => {
+    button.addEventListener("click", () => {
+      applyUpscaleBeforeTrace(2);
+    });
+  });
+  [elements.imageUpscale4xButton, elements.modalImageUpscale4xButton].forEach((button) => {
+    button.addEventListener("click", () => {
+      applyUpscaleBeforeTrace(4);
+    });
+  });
+
+  const applyFlattenStrength = (value) => {
+    state.importSettings.imageFlattenStrength = Math.min(1, Math.max(0, Number(value) || 0));
+    handleImageTraceSettingChange("Updated flatten shading strength");
+  };
+  bindPairedControl(elements.imageFlattenStrengthInput, elements.imageFlattenStrengthNumber, applyFlattenStrength);
+  bindPairedControl(
+    elements.modalImageFlattenStrengthInput,
+    elements.modalImageFlattenStrengthNumber,
+    applyFlattenStrength,
+  );
+
+  const applyFlattenShading = (checked) => {
+    state.importSettings.imageFlattenShading = checked;
+    handleImageTraceSettingChange("Updated flatten shading");
+  };
+  elements.imageFlattenShadingInput.addEventListener("change", (event) => {
+    applyFlattenShading(event.target.checked);
+  });
+  elements.modalImageFlattenShadingInput.addEventListener("change", (event) => {
+    applyFlattenShading(event.target.checked);
+  });
+
   const applyMinRegionArea = (value) => {
     state.importSettings.imageMinRegionArea = Math.max(0, Number(value) || 0);
     handleImageTraceSettingChange("Updated minimum region area");
@@ -3487,6 +3899,8 @@ function wireEvents() {
   });
   elements.unitsMmButton.addEventListener("click", () => setImportUnits("mm"));
   elements.unitsInButton.addEventListener("click", () => setImportUnits("in"));
+  elements.previewUnitsMmButton.addEventListener("click", () => setPreviewUnits("mm"));
+  elements.previewUnitsInButton.addEventListener("click", () => setPreviewUnits("in"));
   elements.importWidthInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") {
       return;
@@ -3528,8 +3942,11 @@ function wireEvents() {
   bindPairedControl(elements.internalEdgeFadeInput, elements.internalEdgeFadeNumber, (value) => {
     updateSurfaceSetting("internalEdgeFade", Number(value));
   }, (value) => Number(value).toFixed(2));
-  elements.edgeFadeAllInput.addEventListener("change", (event) => {
-    updateSurfaceSetting("edgeFadeAll", event.target.checked);
+  elements.edgeFadeEnabledInput.addEventListener("change", (event) => {
+    updateSurfaceSetting("edgeFadeEnabled", event.target.checked);
+  });
+  elements.internalEdgeFadeEnabledInput.addEventListener("change", (event) => {
+    updateSurfaceSetting("internalEdgeFadeEnabled", event.target.checked);
   });
   elements.showSurfaceResolutionInput.addEventListener("change", (event) => {
     updateSurfaceSetting("showResolutionEdges", event.target.checked);
@@ -3637,6 +4054,7 @@ function wireEvents() {
   elements.perspectiveViewButton.addEventListener("click", setPerspectiveView);
   elements.topViewButton.addEventListener("click", setTopView);
   elements.resetViewButton.addEventListener("click", resetSurfaceView);
+  elements.zoomExtentsButton.addEventListener("click", zoomExtentsSurfaceView);
   elements.toggleHelpersButton.addEventListener("click", () => {
     state.ui.show3DHelpers = !state.ui.show3DHelpers;
     syncView();

@@ -52,7 +52,7 @@
             </label>
           </div>
 
-          <div class="button-row">
+          <div class="button-row import-action-row">
             <button id="importProfileButton" class="ghost-button" type="button">Import Selected File</button>
           </div>
 
@@ -78,6 +78,33 @@
               <div class="value-control">
                 <input id="imageColorSamplesInput" type="range" min="1" max="24" value="8" />
                 <input id="imageColorSamplesNumber" type="number" min="1" max="24" step="1" value="8" />
+              </div>
+            </label>
+
+            <label class="control checkbox-control">
+              <input id="imagePhotoPrepInput" type="checkbox" />
+              <span>Prepare photo for trace</span>
+            </label>
+
+            <label class="control">
+              <span>Upscale before trace</span>
+              <div class="segmented-control">
+                <button id="imageUpscaleOffButton" class="ghost-button is-active" type="button">Off</button>
+                <button id="imageUpscale2xButton" class="ghost-button" type="button">2x</button>
+                <button id="imageUpscale4xButton" class="ghost-button" type="button">4x</button>
+              </div>
+            </label>
+
+            <label class="control checkbox-control">
+              <input id="imageFlattenShadingInput" type="checkbox" />
+              <span>Flatten image shading</span>
+            </label>
+
+            <label class="control">
+              <span>Flatten strength</span>
+              <div class="value-control">
+                <input id="imageFlattenStrengthInput" type="range" min="0" max="1" step="0.05" value="0.65" />
+                <input id="imageFlattenStrengthNumber" type="number" min="0" max="1" step="0.05" value="0.65" />
               </div>
             </label>
 
@@ -142,17 +169,7 @@
             </p>
           </div>
 
-          <div id="vectorImportOptions" class="control-grid">
-            <label class="control">
-              <span>Curve sampling</span>
-              <div class="value-control">
-                <input id="svgSamplesInput" type="range" min="24" max="240" value="96" />
-                <input id="svgSamplesNumber" type="number" min="24" max="240" step="1" value="96" />
-              </div>
-            </label>
-          </div>
-
-          <div class="control-grid">
+          <div id="importSizingControls" class="control-grid">
             <div class="control">
               <span>Import units</span>
               <div class="segmented-control">
@@ -179,6 +196,16 @@
             </label>
           </div>
 
+          <div id="vectorImportOptions" class="control-grid">
+            <label class="control">
+              <span>Curve sampling</span>
+              <div class="value-control">
+                <input id="svgSamplesInput" type="range" min="24" max="240" value="96" />
+                <input id="svgSamplesNumber" type="number" min="24" max="240" step="1" value="96" />
+              </div>
+            </label>
+          </div>
+
           <div id="imageTracePanel" class="control-grid is-hidden">
             <div class="panel-heading compact-heading">
               <h3>Trace Regions</h3>
@@ -197,7 +224,7 @@
 
         <section class="panel">
           <div class="panel-heading">
-            <h2>Surface</h2>
+            <h2>Surface Mesh Resolution</h2>
           </div>
 
           <div class="control-grid">
@@ -214,21 +241,13 @@
               <span>Show surface mesh edges</span>
             </label>
 
-            <label class="control">
-              <span>Height scale</span>
-              <div class="value-control">
-                <input id="heightScaleInput" type="range" min="0" max="20" step="0.1" value="7.5" />
-                <input id="heightScaleNumber" type="number" min="0" max="20" step="0.1" value="7.5" />
-              </div>
-            </label>
-
           </div>
         </section>
 
         <section class="panel">
           <div class="panel-heading">
             <h2>Wave Sources</h2>
-            <div class="button-row">
+            <div class="button-row source-add-row">
               <button id="addPointSourceButton" class="ghost-button">Add Point</button>
               <button id="addCurveSourceButton" class="ghost-button">Add Curve</button>
             </div>
@@ -246,28 +265,58 @@
               </div>
             </header>
             <div class="inline-grid">
-              <label class="control">
-                <span>Perimeter fade distance</span>
+              <label id="edgeFadeControl" class="control">
+                <span class="control-heading-row">
+                  <span>Perimeter fade distance</span>
+                  <span class="checkbox-control inline-checkbox">
+                    <input id="edgeFadeEnabledInput" type="checkbox" checked />
+                    <span>On</span>
+                  </span>
+                </span>
                 <div class="value-control">
                   <input id="edgeFadeInput" type="range" min="0" max="40" step="0.5" value="12" />
                   <input id="edgeFadeNumber" type="number" min="0" max="40" step="0.5" value="12" />
                 </div>
               </label>
-              <label class="control">
-                <span>Internal edge fade distance</span>
+              <label id="internalEdgeFadeControl" class="control">
+                <span class="control-heading-row">
+                  <span>Internal edge fade distance</span>
+                  <span class="checkbox-control inline-checkbox">
+                    <input id="internalEdgeFadeEnabledInput" type="checkbox" />
+                    <span>On</span>
+                  </span>
+                </span>
                 <div class="value-control">
                   <input id="internalEdgeFadeInput" type="range" min="0" max="40" step="0.5" value="6" />
                   <input id="internalEdgeFadeNumber" type="number" min="0" max="40" step="0.5" value="6" />
                 </div>
               </label>
+            </div>
+          </article>
+
+          <article class="source-card wave-settings-card">
+            <header>
+              <div>
+                <h3>Wave Output</h3>
+                <p>Relief height sets the final Z height. Normalize keeps combined waves from stacking taller overall.</p>
+              </div>
+            </header>
+            <div class="inline-grid">
+              <label class="control">
+                <span>Relief height</span>
+                <div class="value-control">
+                  <input id="heightScaleInput" type="range" min="0" max="20" step="0.1" value="7.5" />
+                  <input id="heightScaleNumber" type="number" min="0" max="20" step="0.1" value="7.5" />
+                </div>
+              </label>
               <label class="control checkbox-control">
-                <input id="edgeFadeAllInput" type="checkbox" />
-                <span>Fade from all edges</span>
+                <input id="normalizeWavesInput" type="checkbox" />
+                <span>Normalize combined height</span>
               </label>
             </div>
           </article>
 
-          <article id="sharedWaveSettingsPanel" class="source-card is-hidden">
+          <article id="sharedWaveSettingsPanel" class="source-card is-idle wave-settings-card">
             <header>
               <div>
                 <h3>Wave Settings</h3>
@@ -326,10 +375,6 @@
                   <option value="multiply">multiply</option>
                 </select>
               </label>
-              <label class="control checkbox-control">
-                <input id="normalizeWavesInput" type="checkbox" />
-                <span>Normalize combined height</span>
-              </label>
             </div>
           </article>
 
@@ -339,7 +384,7 @@
 
         <section class="panel">
           <div class="panel-heading">
-            <h2>Material</h2>
+            <h2>Wood Grain Preview</h2>
           </div>
 
           <div class="control-grid">
@@ -398,10 +443,15 @@
 
         <section class="panel">
           <div class="panel-heading">
-            <h2>Render Still</h2>
+            <h2>Render View</h2>
           </div>
 
           <div class="control-grid">
+            <label class="control checkbox-control">
+              <input id="renderPreviewInput" type="checkbox" />
+              <span>Preview render look in 3D view</span>
+            </label>
+
             <label class="control">
               <span>Render preset</span>
               <div class="segmented-control">
@@ -436,11 +486,6 @@
             <label class="control checkbox-control">
               <input id="renderLockAspectInput" type="checkbox" checked />
               <span>Lock to current view ratio</span>
-            </label>
-
-            <label class="control checkbox-control">
-              <input id="renderPreviewInput" type="checkbox" />
-              <span>Preview render look in 3D view</span>
             </label>
 
             <label class="control">
@@ -488,12 +533,19 @@
               <p class="eyebrow">3D Preview</p>
               <h2>Surface Visualization</h2>
             </div>
-            <div id="bboxReadout" class="bbox-readout">BBox --</div>
+            <div class="surface-header-meta">
+              <div class="surface-preview-units">
+                <button id="previewUnitsMmButton" class="ghost-button" type="button">mm</button>
+                <button id="previewUnitsInButton" class="ghost-button" type="button">in</button>
+              </div>
+              <div id="bboxReadout" class="bbox-readout">BBox --</div>
+            </div>
           </div>
           <div class="surface-toolbar">
             <button id="perspectiveViewButton" class="ghost-button" type="button">Perspective</button>
             <button id="topViewButton" class="ghost-button" type="button">Top View</button>
             <button id="resetViewButton" class="ghost-button" type="button">Reset View</button>
+            <button id="zoomExtentsButton" class="ghost-button" type="button">Zoom Extents</button>
             <button id="toggleHelpersButton" class="ghost-button" type="button">Hide Guides</button>
           </div>
           <canvas id="surfaceCanvas"></canvas>
@@ -510,6 +562,10 @@
             </div>
           </div>
           <canvas id="profileCanvas" width="920" height="520"></canvas>
+          <div class="profile-resize-handle profile-resize-handle-nw" data-resize-handle="nw"></div>
+          <div class="profile-resize-handle profile-resize-handle-ne" data-resize-handle="ne"></div>
+          <div class="profile-resize-handle profile-resize-handle-sw" data-resize-handle="sw"></div>
+          <div class="profile-resize-handle profile-resize-handle-se" data-resize-handle="se"></div>
         </section>
       </main>
     </div>
@@ -568,6 +624,33 @@
               <div class="value-control">
                 <input id="modalImageColorSamplesInput" type="range" min="2" max="24" step="1" value="8" />
                 <input id="modalImageColorSamplesNumber" type="number" min="2" max="24" step="1" value="8" />
+              </div>
+            </label>
+
+            <label class="control checkbox-control">
+              <input id="modalImagePhotoPrepInput" type="checkbox" />
+              <span>Prepare photo for trace</span>
+            </label>
+
+            <label class="control">
+              <span>Upscale before trace</span>
+              <div class="segmented-control">
+                <button id="modalImageUpscaleOffButton" class="ghost-button is-active" type="button">Off</button>
+                <button id="modalImageUpscale2xButton" class="ghost-button" type="button">2x</button>
+                <button id="modalImageUpscale4xButton" class="ghost-button" type="button">4x</button>
+              </div>
+            </label>
+
+            <label class="control checkbox-control">
+              <input id="modalImageFlattenShadingInput" type="checkbox" />
+              <span>Flatten image shading</span>
+            </label>
+
+            <label class="control">
+              <span>Flatten strength</span>
+              <div class="value-control">
+                <input id="modalImageFlattenStrengthInput" type="range" min="0" max="1" step="0.05" value="0.65" />
+                <input id="modalImageFlattenStrengthNumber" type="number" min="0" max="1" step="0.05" value="0.65" />
               </div>
             </label>
 
